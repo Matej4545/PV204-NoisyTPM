@@ -1,0 +1,2 @@
+cryptography==2.8
+noiseprotocol==0.3.1
