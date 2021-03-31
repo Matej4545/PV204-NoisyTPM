@@ -14,3 +14,13 @@ Secure Channel with Noise Protocol and TPM
 ### Resources
 - Noise Protocol Framework–http://www.noiseprotocol.org/
 - TPM2 Tools–https://github.com/tpm2-software/tpm2-tools
+
+___
+
+#### Code formatting
+If you want to apply code formatter `black` on `.py` files, install black:
+
+    pip install black
+then to format `.py` files run:
+
+    black *.py --line-length 120
