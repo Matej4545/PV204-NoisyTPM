@@ -36,7 +36,9 @@ class Server:
                 encryption_algorithm=serialization.NoEncryption(),
             ),
         )
-        self.noise.set_keypair_from_public_bytes(Keypair.REMOTE_STATIC, client_public_key)
+        self.noise.set_keypair_from_public_bytes(
+            Keypair.REMOTE_STATIC, client_public_key
+        )
 
     def noise_handshake(self):
         self.noise.set_as_responder()
