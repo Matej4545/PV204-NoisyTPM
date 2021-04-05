@@ -24,3 +24,6 @@ If you want to apply code formatter `black` on `.py` files, install black:
 then to format `.py` files run:
 
     black *.py --line-length 120
+
+#### TPM Simulator prerequisite 
+To successfully run the TPM simulator you have to [download](https://sourceforge.net/projects/ibmswtpm2/) and build IBM TPM server. Then add the binary `tpm_server` to the `$PATH`.
