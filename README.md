@@ -30,10 +30,15 @@ then to format `.py` files run:
 ````
 black *.py --line-length 120
 ````
+<<<<<<< HEAD
 
 #### TPM Simulator prerequisite
 When connecting to a TCP TPM, a simulator needs to be running and listening on port 2321.
 
+=======
+
+#### TPM Simulator prerequisite
+>>>>>>> 3dace97bd6c162bb7c1e6a49766df6a38448d3ac
 On Windows, you can use a pre-compiled [TPM 2.0 simulator](https://www.microsoft.com/en-us/download/details.aspx?id=52507) provided by Microsoft.
 
 On Linux, you have to [download](https://sourceforge.net/projects/ibmswtpm2/) and build IBM TPM server. Then add the binary `tpm_server` to the `$PATH`.
