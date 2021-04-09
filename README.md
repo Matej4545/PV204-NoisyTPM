@@ -46,13 +46,13 @@ To run server, you will need to do following steps:
 Windows:
 `python -m venv venv`
 
-Linux: `python3 -m venv venv` (untested)
+Linux: `python3 -m venv venv`
 
 2. start virtual environment
 
 Windows: `./venv/Scripts/activate`
 
-Linux: `./venv/Scripts/activate`
+Linux: `source venv/bin/activate`
 
 3. install requirements
 `pip install -r requirements.txt`
