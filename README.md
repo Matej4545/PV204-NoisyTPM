@@ -37,3 +37,22 @@ When connecting to a TCP TPM, a simulator needs to be running and listening on p
 On Windows, you can use a pre-compiled [TPM 2.0 simulator](https://www.microsoft.com/en-us/download/details.aspx?id=52507) provided by Microsoft.
 
 On Linux, you have to [download](https://sourceforge.net/projects/ibmswtpm2/) and build IBM TPM server. Then add the binary `tpm_server` to the `$PATH`.
+
+#### Server prerequisities
+To run server, you will need to do following steps:
+
+1. set up venv environment (run in project directory)
+
+Windows:
+`python -m venv venv`
+
+Linux: `python3 -m venv venv` (untested)
+
+2. start virtual environment
+
+Windows: `./venv/Scripts/activate`
+
+Linux: `./venv/Scripts/activate`
+
+3. install requirements
+`pip install -r requirements.txt`
