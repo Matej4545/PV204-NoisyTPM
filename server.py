@@ -14,16 +14,18 @@ import time
 import interfaces
 from signal import signal, SIGINT
 from sys import exit
+
 # Set logging
-logger = logging.getLogger('server_logger')
+logger = logging.getLogger("server_logger")
 logger.setLevel(constants.SERVER_LOG_LEVEL)
 fh = logging.FileHandler("server.log")
 ch = logging.StreamHandler()
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 fh.setFormatter(formatter)
 ch.setFormatter(formatter)
 logger.addHandler(fh)
 logger.addHandler(ch)
+
 
 class Server:
     def __init__(self):
@@ -35,6 +37,7 @@ class Server:
         self.deserialize()
         self.isRunning = True
         logger.info("Server initialized.")
+
     def start_listening(self):
         logger.info("Start listening")
         while self.isRunning:
@@ -60,7 +63,7 @@ class Server:
             ),
         )
         self.noise.set_keypair_from_public_bytes(Keypair.REMOTE_STATIC, client_public_key)
-        logger.debug(f'Keys set successfully.')
+        logger.debug(f"Keys set successfully.")
 
     def noise_handshake(self, conn):
         self.noise.set_as_responder()
@@ -103,7 +106,7 @@ class Server:
                 logger.debug(f"Deserialized sucessfully from {filepath}")
                 return res
         except FileNotFoundError as err:
-            logger.warn(f'File {filepath} was not found!')
+            logger.warn(f"File {filepath} was not found!")
             raise err
 
     def serialize_to_file(self, file, data):
@@ -115,7 +118,7 @@ class Server:
                 output_file.write(jsonpickle.encode(data))
                 logger.debug(f"Serialized sucessfully to {filepath}")
         except FileNotFoundError as err:
-            logger.error(f'File {filepath} was not found!')
+            logger.error(f"File {filepath} was not found!")
             raise err
 
     def deserialize(self):
@@ -130,12 +133,10 @@ class Server:
         except FileNotFoundError:
             logger.warn("Message list file probably does not yet exists.")
 
-
     def serialize(self):
         self.serialize_to_file(constants.SERVER_CLIENTS_FILENAME, self.client_list)
         self.serialize_to_file(constants.SERVER_MESSAGES_FILENAME, self.message_list)
-        
-    
+
     def handle_requests(self):
         while self.isRunning:
             if len(self.requests) != 0:
@@ -145,11 +146,12 @@ class Server:
                 self.set_connection_keys(conn)
                 self.noise_handshake(conn)
                 self.communication(conn)
+
     def initialize(self):
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.sock.bind(("localhost", constants.SERVER_PORT))
         self.sock.listen(1)
-        self.listen_thread = threading.Thread(target=self.start_listening,daemon=True)
+        self.listen_thread = threading.Thread(target=self.start_listening, daemon=True)
         self.req_thread = threading.Thread(target=self.handle_requests, daemon=True)
         self.listen_thread.start()
         self.req_thread.start()
@@ -157,21 +159,25 @@ class Server:
     def stop(self):
         self.serialize()
 
+
 server = Server()
 server.initialize()
 
 """FLASK FRONTEND"""
 app = Flask(__name__)
 
-@app.route('/')
+
+@app.route("/")
 def hello_world():
     logger.debug(f"array length: {len(server.message_list)}")
-    return render_template('index.html', len=len(server.message_list), message_list=server.message_list)
+    return render_template("index.html", len=len(server.message_list), message_list=server.message_list)
+
 
 def sigint_handler(signal_received, frame):
     logger.info("Ctrl-C catched, trying to serialize server data")
     server.stop()
     exit(0)
+
 
 if __name__ == "__main__":
     signal(SIGINT, sigint_handler)
