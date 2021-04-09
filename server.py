@@ -4,29 +4,52 @@ from cryptography.hazmat.primitives import serialization
 from itertools import cycle
 from noise.backends.default.diffie_hellmans import ED25519
 from noise.connection import NoiseConnection, Keypair
-
+from flask import Flask, render_template
+from os import path, makedirs
 import constants
-
+import jsonpickle
+import logging
+import threading
+import time
+import interfaces
+from signal import signal, SIGINT
+from sys import exit
+# Set logging
+logger = logging.getLogger('server_logger')
+logger.setLevel(constants.SERVER_LOG_LEVEL)
+fh = logging.FileHandler("server.log")
+ch = logging.StreamHandler()
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+fh.setFormatter(formatter)
+ch.setFormatter(formatter)
+logger.addHandler(fh)
+logger.addHandler(ch)
 
 class Server:
     def __init__(self):
         self.sock = socket.socket()
         self.key_pair = ED25519().generate_keypair()
-
+        self.client_list = []
+        self.message_list = []
+        self.requests = []
+        self.deserialize()
+        self.isRunning = True
+        logger.info("Server initialized.")
     def start_listening(self):
-        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.sock.bind(("localhost", constants.SERVER_PORT))
-        self.sock.listen(1)
-        self.conn, addr = self.sock.accept()
-        print("Accepted connection from", addr)
+        logger.info("Start listening")
+        while self.isRunning:
+            conn, addr = self.sock.accept()
+            self.requests.append((conn, addr))
+            logger.info(f"Accepted connection from {addr}")
+        logger.info("Stop listening")
 
-    def exchange_public_keys(self) -> bytes:
-        client_public_key = self.conn.recv(constants.CLIENT_PORT)
-        self.conn.send(self.key_pair.public_bytes)
+    def exchange_public_keys(self, conn) -> bytes:
+        client_public_key = conn.recv(constants.CLIENT_PORT)
+        conn.send(self.key_pair.public_bytes)
         return client_public_key
 
-    def set_connection_keys(self):
-        client_public_key = self.exchange_public_keys()
+    def set_connection_keys(self, conn):
+        client_public_key = self.exchange_public_keys(conn)
         self.noise = NoiseConnection.from_name(b"Noise_KK_25519_AESGCM_SHA256")
         self.noise.set_keypair_from_private_bytes(
             Keypair.STATIC,
@@ -37,8 +60,9 @@ class Server:
             ),
         )
         self.noise.set_keypair_from_public_bytes(Keypair.REMOTE_STATIC, client_public_key)
+        logger.debug(f'Keys set successfully.')
 
-    def noise_handshake(self):
+    def noise_handshake(self, conn):
         self.noise.set_as_responder()
         self.noise.start_handshake()
         # Perform handshake. Break when finished
@@ -47,28 +71,108 @@ class Server:
                 break
             elif action == "send":
                 ciphertext = self.noise.write_message()
-                self.conn.sendall(ciphertext)
+                conn.sendall(ciphertext)
             elif action == "receive":
-                data = self.conn.recv(constants.CLIENT_PORT)
+                data = conn.recv(constants.CLIENT_PORT)
                 plaintext = self.noise.read_message(data)
 
-    def communication(self):
+    def communication(self, conn):
         # Endless loop "echoing" received data
         while True:
-            data = self.conn.recv(constants.CLIENT_PORT)
+            data = conn.recv(constants.CLIENT_PORT)
             if not data:
                 break
             received = self.noise.decrypt(data)
-            print(received)
-            self.conn.sendall(self.noise.encrypt(b"Hello client!"))
+            logger.debug(f"Request received, len: {len(received)}")
+            self.handleRequest(received)
+            conn.sendall(self.noise.encrypt(b"Hello client!"))
+        logger.debug(f"End communication.")
 
-    def run(self):
-        self.start_listening()
-        self.set_connection_keys()
-        self.noise_handshake()
-        self.communication()
+    def handleRequest(self, request):
+        """This should include logic to start TPM hash evaluation, register new client or whatever"""
+        logger.debug(f"Payload: {request}")
+        self.message_list.append(interfaces.Message("key", str(request)))
+        logger.debug(f"messages length: {len(self.message_list)}")
 
+    def deserialize_from_file(self, file) -> dict:
+        """Method to read objects from file using jsonpickle"""
+        try:
+            filepath = path.join(constants.SERVER_DATA_PATH, file)
+            with open(filepath, "r") as input_file:
+                res = jsonpickle.decode(input_file.read())
+                logger.debug(f"Deserialized sucessfully from {filepath}")
+                return res
+        except FileNotFoundError as err:
+            logger.warn(f'File {filepath} was not found!')
+            raise err
+
+    def serialize_to_file(self, file, data):
+        """Method to write objects to file using jsonpickle"""
+        try:
+            filepath = path.join(constants.SERVER_DATA_PATH, file)
+            makedirs(path.dirname(filepath), exist_ok=True)
+            with open(filepath, "w") as output_file:
+                output_file.write(jsonpickle.encode(data))
+                logger.debug(f"Serialized sucessfully to {filepath}")
+        except FileNotFoundError as err:
+            logger.error(f'File {filepath} was not found!')
+            raise err
+
+    def deserialize(self):
+        try:
+            out = self.deserialize_from_file(constants.SERVER_CLIENTS_FILENAME)
+            self.client_list = list(set(list(out) + self.client_list))
+        except FileNotFoundError:
+            logger.warn("Client list file probably does not yet exists.")
+        try:
+            out = self.deserialize_from_file(constants.SERVER_MESSAGES_FILENAME)
+            self.message_list = list(set(list(out) + self.message_list))
+        except FileNotFoundError:
+            logger.warn("Message list file probably does not yet exists.")
+
+
+    def serialize(self):
+        self.serialize_to_file(constants.SERVER_CLIENTS_FILENAME, self.client_list)
+        self.serialize_to_file(constants.SERVER_MESSAGES_FILENAME, self.message_list)
+        
+    
+    def handle_requests(self):
+        while self.isRunning:
+            if len(self.requests) != 0:
+                req = self.requests.pop()
+                logger.debug(f"Serving request {req}")
+                conn = req[0]
+                self.set_connection_keys(conn)
+                self.noise_handshake(conn)
+                self.communication(conn)
+    def initialize(self):
+        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.sock.bind(("localhost", constants.SERVER_PORT))
+        self.sock.listen(1)
+        self.listen_thread = threading.Thread(target=self.start_listening,daemon=True)
+        self.req_thread = threading.Thread(target=self.handle_requests, daemon=True)
+        self.listen_thread.start()
+        self.req_thread.start()
+
+    def stop(self):
+        self.serialize()
+
+server = Server()
+server.initialize()
+
+"""FLASK FRONTEND"""
+app = Flask(__name__)
+
+@app.route('/')
+def hello_world():
+    logger.debug(f"array length: {len(server.message_list)}")
+    return render_template('index.html', len=len(server.message_list), message_list=server.message_list)
+
+def sigint_handler(signal_received, frame):
+    logger.info("Ctrl-C catched, trying to serialize server data")
+    server.stop()
+    exit(0)
 
 if __name__ == "__main__":
-    server = Server()
-    server.run()
+    signal(SIGINT, sigint_handler)
+    app.run(port=5000)
