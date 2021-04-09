@@ -56,7 +56,7 @@ class Client:
 
 if __name__ == "__main__":
     client = Client()
-    if len(argv):
+    if len(argv) > 1:
         client.run(argv[1])
     else:
         print("Please write message as argument")
