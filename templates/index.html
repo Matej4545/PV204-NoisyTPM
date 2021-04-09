@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=1200px, initial-scale=1.0">
+    <link href="{{ url_for('static', filename='main.css') }}" rel="stylesheet" type="text/css">
+    <title>Chat app</title>
+</head>
+<body>
+    <h1>Chat app</h1>
+    <span>Messages: {{len}}</span>
+    <div>
+        {%for i in range(0, len)%}
+            <div class="message_grid">
+                <span class="message_uid">{{message_list[i].uid}}</span>
+                <span class="message_timestamp">{{message_list[i].timestamp}}</span>
+                <span class="message_content">{{message_list[i].content}}</span>
+            </div>
+        {%endfor%}
+          
+    </div>
+</body>
+</html>

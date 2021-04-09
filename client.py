@@ -3,7 +3,7 @@ import socket
 from cryptography.hazmat.primitives import serialization
 from noise.backends.default.diffie_hellmans import ED25519
 from noise.connection import NoiseConnection, Keypair
-
+from sys import argv
 import constants
 
 
@@ -46,14 +46,17 @@ class Client:
         plaintext = self.noise.decrypt(ciphertext)
         print(plaintext)
 
-    def run(self):
+    def run(self, message):
         self.sock.connect(("localhost", constants.SERVER_PORT))
         self.set_connection_keys()
         self.noise_handshake()
-        self.send_encrypted_msg("Hello server!")
+        self.send_encrypted_msg(message)
         self.receive_and_decrypt_msg()
 
 
 if __name__ == "__main__":
     client = Client()
-    client.run()
+    if len(argv) > 1:
+        client.run(argv[1])
+    else:
+        print("Please write message as argument")

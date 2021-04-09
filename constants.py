@@ -1,2 +1,8 @@
+from logging import DEBUG
+
 SERVER_PORT = 5555
 CLIENT_PORT = 4444
+SERVER_DATA_PATH = "./data/"
+SERVER_CLIENTS_FILENAME = "clients.json"
+SERVER_MESSAGES_FILENAME = "messages.json"
+SERVER_LOG_LEVEL = DEBUG

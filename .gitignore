@@ -54,3 +54,10 @@ dkms.conf
 # PyCharm
 .idea/
 __pycache__/
+
+# Virtual Environment
+venv/
+
+# Custom data
+server.log
+data/
