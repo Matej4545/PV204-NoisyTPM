@@ -19,7 +19,7 @@ def get_property_vendor_string(tpm: Tpm) -> str:
     cap_res = tpm.GetCapability(TPM_CAP.TPM_PROPERTIES, TPM_PT.VENDOR_STRING_1, 1)
     string = cap_res.capabilityData.tpmProperty[0].value
 
-    res_bytes = string.to_bytes(int(string.bit_length()/8 + 0.5), "big")
+    res_bytes = string.to_bytes(int(string.bit_length() / 8 + 0.5), "big")
     return "".join([chr(i) for i in res_bytes])
 
 
@@ -29,8 +29,9 @@ def get_pcr_values(tpm: Tpm, alg: TPM_ALG_ID = TPM_ALG_ID.SHA1) -> list[bytearra
     cap_res = tpm.GetCapability(TPM_CAP.TPM_PROPERTIES, TPM_PT.PCR_SELECT_MIN, 1)
     select_min = cap_res.capabilityData.tpmProperty[0].value - 1
 
+    # little endian PCR selection bitmap
     select_list = [0b11111111]
-    select_list.extend([0 for _ in range(select_min)])  # little endian PCR selection bitmap
+    select_list.extend([0 for _ in range(select_min)])
 
     pcr_select = TPMS_PCR_SELECTION(alg, bytes(select_list))
     try:
