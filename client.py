@@ -8,6 +8,7 @@ import constants
 import argparse
 import threading
 
+
 class Client:
     def __init__(self):
         self.sock = socket.socket()
@@ -28,7 +29,9 @@ class Client:
                 encryption_algorithm=serialization.NoEncryption(),
             ),
         )
-        self.noise.set_keypair_from_public_bytes(Keypair.REMOTE_STATIC, server_public_key)
+        self.noise.set_keypair_from_public_bytes(
+            Keypair.REMOTE_STATIC, server_public_key
+        )
 
     def noise_handshake(self):
         self.noise.set_as_initiator()
@@ -55,7 +58,7 @@ class Client:
             self.sock.connect((self.ip, self.port))
             self.set_connection_keys()
             self.noise_handshake()
-            self.send_encrypted_msg(user_input)    
+            self.send_encrypted_msg(user_input)
             self.receive_and_decrypt_msg()
             self.sock.close()
 
@@ -65,36 +68,70 @@ class Client:
         print(f'Server: {plaintext.decode("utf-8") }')
 
     def register(self):
-        #TODO: read TPMs PCR values and somehow send them to a server
+        # TODO: read TPMs PCR values and somehow send them to a server
         print("Registration complete, your identifier is <TOP_SECRET_PCR_HASH>")
         return True
 
     def run(self, ip, port, message):
         self.ip = ip
         self.port = port
-        if (message): # One time
+        if message:  # One time
             self.sock.connect((ip, port))
             self.set_connection_keys()
             self.noise_handshake()
             self.send_encrypted_msg(message)
             self.receive_and_decrypt_msg()
-        else: # Multiple messages
+        else:  # Multiple messages
             self.send_messages()
-        
+
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='PV204 NoisyTPM - this is a part of team project for PV204. \
+    parser = argparse.ArgumentParser(
+        description="PV204 NoisyTPM - this is a part of team project for PV204. \
                                                 Client app can communicate with server using Noise framework \
                                                 and authenticate via TPM. Please see \
-                                                \'https://github.com/Matej4545/PV204-NoisyTPM/\' for more info.')
-    parser.add_argument('-s','--server', dest='server', metavar='IP', type=str, nargs=1, default='localhost', help="An IP address or hostname of the server.")
-    parser.add_argument('-p','--port', dest='port', metavar='PORT', type=int, nargs=1, default=5555, help="A port where the server is listening.")
-    parser.add_argument('-m', '--message', metavar='MESSAGE', dest='message', type=str, nargs='+', help='Specify message as argument. For interactive session please omit.') 
-    parser.add_argument('-r --register', dest="register", action='store_true', default=False, help="If you are not authenticated or running the app first time, you will need to register.")
-    args=parser.parse_args()
- 
+                                                'https://github.com/Matej4545/PV204-NoisyTPM/' for more info."
+    )
+    parser.add_argument(
+        "-s",
+        "--server",
+        dest="server",
+        metavar="IP",
+        type=str,
+        nargs=1,
+        default="localhost",
+        help="An IP address or hostname of the server.",
+    )
+    parser.add_argument(
+        "-p",
+        "--port",
+        dest="port",
+        metavar="PORT",
+        type=int,
+        nargs=1,
+        default=5555,
+        help="A port where the server is listening.",
+    )
+    parser.add_argument(
+        "-m",
+        "--message",
+        metavar="MESSAGE",
+        dest="message",
+        type=str,
+        nargs="+",
+        help="Specify message as argument. For interactive session please omit.",
+    )
+    parser.add_argument(
+        "-r --register",
+        dest="register",
+        action="store_true",
+        default=False,
+        help="If you are not authenticated or running the app first time, you will need to register.",
+    )
+    args = parser.parse_args()
+
     try:
-        message =  "" if args.message is None else "".join(args.message).strip()
+        message = "" if args.message is None else "".join(args.message).strip()
         server = args.server[0].strip()
         port = args.port[0]
         client = Client()
