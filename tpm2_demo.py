@@ -59,9 +59,8 @@ def tpm2_demo():
     # the signature's validity is checked
     # the signature is also randomized with a nonce
     # this can be used for a remote attestation
-    nonce_size = 20
-    nonce = Crypto.randomBytes(nonce_size)
-    signed_pcr = tu.get_signed_pcr_values(tpm, Crypto.randomBytes(20), pcr_bitmap)
+    nonce = Crypto.randomBytes(20)
+    signed_pcr = tu.get_signed_pcr_values(tpm, nonce, pcr_bitmap)
     if signed_pcr is None:
         print("Oh no! Something malicious has happened!")
         return
@@ -78,7 +77,7 @@ def tpm2_demo():
 
     print("\nECDSA (NIST-P256) public key: x = ", ec_x.hex(), ", y = ", ec_y.hex(), sep="")
     print("Signature: r = ", sig_r.hex(), ", s = ", sig_s.hex(), sep="")
-    print(f"{nonce_size} bytes large nonce: {nonce.hex()}, do not reuse :)")
+    print(f"{len(nonce)} bytes large nonce: {nonce.hex()}, do not reuse :)")
 
     # we may also validate the signature without TPM using cryptography.hazmat
     print("\nSignature verification using hazmat:", end=" ")
