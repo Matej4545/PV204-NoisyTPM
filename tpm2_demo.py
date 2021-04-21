@@ -74,6 +74,28 @@ def tpm2_demo():
     else:
         print("FAIL")
 
+    # the 'data' obtained from Quote contains quite a few values
+    print("\nRaw signed data:", data.hex())
+
+    # the binary data are hard to read, use AttestData for an easy access
+    attested_data = tu.AttestData(data)
+    print("\nSome values contained in signed data:")
+    print("Magic:", attested_data.magic())
+    print("Signing key name:", attested_data.signing_key_name())
+    print("Nonce:", attested_data.nonce())
+    print("Firmware version:", attested_data.firmware_version())
+    print("Hash ID (for PCR values, SHA1 probably):", attested_data.pcr_hash_id())
+    print("Digest of selected PCRs:", attested_data.digest())
+
+    print("\nSelected PCRs:")
+    sep = ""
+    for i, val in enumerate(attested_data.pcr_select()):
+        print(f"{sep}{i:2}: {str(val):5}", end="")
+        sep = " | "
+        if i % 8 == 7:
+            sep = ""
+            print()
+
 
 if __name__ == "__main__":
     tpm2_demo()

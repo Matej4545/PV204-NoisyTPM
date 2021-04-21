@@ -26,6 +26,52 @@ AIK_TEMPLATE = TPMT_PUBLIC(
 AIK_HANDLE = TPM_HANDLE(0x81000000)
 
 
+class AttestData:
+    """A wrapper class for attested data.
+    Access attributes to get raw values.
+    Use functions to get pretty representation.
+    """
+
+    def __init__(self, data: bytearray):
+        attest = TPMS_ATTEST.fromBytes(data)
+
+        # ignores attributes: type, clockInfo
+        self.__magic = attest.magic
+        self.__signing_key_name = attest.qualifiedSigner
+        self.__nonce = attest.extraData
+        self.__firmware_version = attest.firmwareVersion
+        self.__pcr_hash_id = attest.attested.pcrSelect[0].hash
+        self.__pcr_select = attest.attested.pcrSelect[0].pcrSelect
+        self.__digest = attest.attested.pcrDigest
+
+    def magic(self) -> int:
+        return self.__magic
+
+    def signing_key_name(self) -> str:
+        return self.__signing_key_name.hex()
+
+    def nonce(self) -> str:
+        return self.__nonce.hex()
+
+    def firmware_version(self) -> int:
+        return self.__firmware_version
+
+    def pcr_hash_id(self) -> int:
+        return int(self.__pcr_hash_id)
+
+    def pcr_select(self) -> List[bool]:
+        bool_arr = []
+        for byte in self.__pcr_select:
+            tmp = byte
+            for i in range(8):
+                tmp >>= i
+                bool_arr.append(bool(tmp & 1))
+        return bool_arr
+
+    def digest(self) -> str:
+        return self.__digest.hex()
+
+
 def create_aik(tpm: Tpm) -> bool:
     """Create a persistent primary attestation identity key (AIK)."""
     try:
