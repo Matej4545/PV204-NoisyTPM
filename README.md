@@ -56,3 +56,7 @@ Linux: `source venv/bin/activate`
 
 3. install requirements
 `pip install -r requirements.txt`
+   
+#### Note on usage of physical TPM on Linux
+It is possible that using physical TPM on Linux will require you to set your access permissions accordingly.
+More on this issue [here](https://superuser.com/questions/1463364/accessing-trusted-platform-moduletpm-without-root-permission).
