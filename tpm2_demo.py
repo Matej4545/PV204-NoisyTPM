@@ -1,6 +1,17 @@
 import TPM2.Tpm as Tpm2
 import tpm2_util as tu
 from TPM2.Crypt import Crypto
+from typing import List
+
+
+def helper_bitmap_to_pcr_nums(bitmap: List[int]) -> List[int]:
+    """Get PCR numbers as in bitmap."""
+    pcr_nums = []
+    for j, byte in enumerate(bitmap):
+        for i in range(8):
+            if (byte >> i) & 1:
+                pcr_nums.append(8 * j + i)
+    return pcr_nums
 
 
 def tpm2_demo():
@@ -33,10 +44,12 @@ def tpm2_demo():
     print("PCR min select:", tu.get_pcr_min_select(tpm))
 
     # get plaintext SHA1 PCR values, optionally specify a selection bitmap, e.g. 0b00001111 for PCR0-3
-    print("\nPCR SHA1 hashes:")
-    plaintext_pcr = tu.get_pcr_values(tpm)
-    for i, pcr_val in enumerate(plaintext_pcr):
-        print(f"PCR{i}", pcr_val.hex())
+    pcr_bitmap = [0b11111111, 0b00111100, 0b11000011]
+    print("\nRequested PCR SHA1 hashes:")
+    plaintext_pcr = tu.get_pcr_values(tpm, pcr_bitmap)
+    pcr_nums = helper_bitmap_to_pcr_nums(pcr_bitmap)
+    for pcr_num, pcr_val in zip(pcr_nums, plaintext_pcr):
+        print(f"PCR{pcr_num:2}:", pcr_val.hex())
 
     if len(plaintext_pcr) == 0:
         print("No PCRs were selected or TPM returned empty buffer.")
@@ -48,7 +61,7 @@ def tpm2_demo():
     # this can be used for a remote attestation
     nonce_size = 20
     nonce = Crypto.randomBytes(nonce_size)
-    signed_pcr = tu.get_signed_pcr_values(tpm, Crypto.randomBytes(20))
+    signed_pcr = tu.get_signed_pcr_values(tpm, Crypto.randomBytes(20), pcr_bitmap)
     if signed_pcr is None:
         print("Oh no! Something malicious has happened!")
         return
