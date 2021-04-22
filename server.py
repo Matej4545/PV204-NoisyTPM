@@ -87,14 +87,15 @@ class Server:
                 break
             received = self.noise.decrypt(data)
             logger.debug(f"Request received, len: {len(received)}")
-            self.handleRequest(received)
+            self.handle_request(received)
             conn.sendall(self.noise.encrypt(b"Successful!"))
         logger.debug(f"End communication.")
 
-    def handleRequest(self, request):
+    def handle_request(self, request):
         """This should include logic to start TPM hash evaluation, register new client or whatever"""
         logger.debug(f"Payload: {request}")
-        self.message_list.append(interfaces.Message("key", str(request)))
+        #TODO: connect with user key
+        self.message_list.append(interfaces.Message("key", request.decode("utf-8")))
         logger.debug(f"messages length: {len(self.message_list)}")
 
     def deserialize_from_file(self, file) -> dict:
@@ -171,7 +172,7 @@ server.initialize()
 app = Flask(__name__)
 
 
-@app.route("/")
+@app.route("/", methods = ['GET'])
 def return_main():
     logger.debug(f"array length: {len(server.message_list)}")
     return render_template("index.html", len=len(server.message_list), message_list=server.message_list)
@@ -180,6 +181,10 @@ def return_main():
 def return_users():
     """This is only for demonstration purposes."""
     return render_template("users.html", len=len(server.user_list), user_list=server.user_list)
+
+@app.route("/about", methods=['GET'])
+def return_about():
+    return render_template("about.html")
 
 @app.route("/register", methods = ['POST'])
 def register():
