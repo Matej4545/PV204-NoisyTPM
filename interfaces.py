@@ -13,6 +13,7 @@ class User(object):
     def check(self, pcr_hash):
         return pcr_hash == self.pcr_hash
 
+
 class Message(object):
     def __init__(self, uid, content):
         self.timestamp = dt.datetime.utcnow()
