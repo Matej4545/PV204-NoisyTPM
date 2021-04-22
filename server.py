@@ -4,7 +4,7 @@ from cryptography.hazmat.primitives import serialization
 from itertools import cycle
 from noise.backends.default.diffie_hellmans import ED25519
 from noise.connection import NoiseConnection, Keypair
-from flask import Flask, render_template
+from flask import Flask, render_template, request, jsonify
 from os import path, makedirs
 import constants
 import jsonpickle
@@ -31,7 +31,7 @@ class Server:
     def __init__(self):
         self.sock = socket.socket()
         self.key_pair = ED25519().generate_keypair()
-        self.client_list = []
+        self.user_list = []
         self.message_list = []
         self.requests = []
         self.deserialize()
@@ -88,7 +88,7 @@ class Server:
             received = self.noise.decrypt(data)
             logger.debug(f"Request received, len: {len(received)}")
             self.handleRequest(received)
-            conn.sendall(self.noise.encrypt(b"Hello client!"))
+            conn.sendall(self.noise.encrypt(b"Successful!"))
         logger.debug(f"End communication.")
 
     def handleRequest(self, request):
@@ -124,7 +124,7 @@ class Server:
     def deserialize(self):
         try:
             out = self.deserialize_from_file(constants.SERVER_CLIENTS_FILENAME)
-            self.client_list = list(set(list(out) + self.client_list))
+            self.user_list = list(set(list(out) + self.user_list))
         except FileNotFoundError:
             logger.warn("Client list file probably does not yet exists.")
         try:
@@ -134,7 +134,7 @@ class Server:
             logger.warn("Message list file probably does not yet exists.")
 
     def serialize(self):
-        self.serialize_to_file(constants.SERVER_CLIENTS_FILENAME, self.client_list)
+        self.serialize_to_file(constants.SERVER_CLIENTS_FILENAME, self.user_list)
         self.serialize_to_file(constants.SERVER_MESSAGES_FILENAME, self.message_list)
 
     def handle_requests(self):
@@ -156,6 +156,10 @@ class Server:
         self.listen_thread.start()
         self.req_thread.start()
 
+    def create_user(self, username, pubkey, pcr_hash):
+        user = interfaces.User(pubkey, pcr_hash, username)
+        self.user_list.append(user)
+        return user
     def stop(self):
         self.serialize()
 
@@ -168,9 +172,30 @@ app = Flask(__name__)
 
 
 @app.route("/")
-def hello_world():
+def return_main():
     logger.debug(f"array length: {len(server.message_list)}")
     return render_template("index.html", len=len(server.message_list), message_list=server.message_list)
+
+@app.route("/users", methods = ['GET'])
+def return_users():
+    """This is only for demonstration purposes."""
+    return render_template("users.html", len=len(server.user_list), user_list=server.user_list)
+
+@app.route("/register", methods = ['POST'])
+def register():
+    # Would be nice to validate parameters to prevent XSS
+
+    username = request.json['username']
+    pcr_hash = request.json['pcr_hash']
+    pubkey = request.json['pubkey']
+
+    logger.debug(f'User: {username}, {pcr_hash}, {pubkey}')
+    try:
+        res = server.create_user(username, pubkey,pcr_hash)
+        return jsonify({"message": "User created"}),200
+    except:
+        logger.error("Could not create user")
+        logger.error(request.form.listvalues())
 
 
 def sigint_handler(signal_received, frame):
