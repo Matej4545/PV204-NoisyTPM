@@ -148,6 +148,11 @@ class Server:
                 self.noise_handshake(conn)
                 self.communication(conn)
 
+    def purge(self):
+        self.message_list.clear()
+        self.user_list.clear()
+        self.serialize()
+
     def initialize(self):
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.sock.bind(("localhost", constants.SERVER_PORT))
@@ -186,18 +191,24 @@ def return_users():
 def return_about():
     return render_template("about.html")
 
+@app.route("/purge", methods=['POST'])
+def purge():
+    if request.json['magic'] == "please":
+        server.purge()
+        return jsonify({"message": "There you go!"}),204
+    else:
+        return jsonify({"message": "Provide the magic word."}),401
+
 @app.route("/register", methods = ['POST'])
 def register():
     # Would be nice to validate parameters to prevent XSS
-
     username = request.json['username']
     pcr_hash = request.json['pcr_hash']
     pubkey = request.json['pubkey']
-
-    logger.debug(f'User: {username}, {pcr_hash}, {pubkey}')
     try:
         res = server.create_user(username, pubkey,pcr_hash)
-        return jsonify({"message": "User created"}),200
+        logger.debug(f'New user: {res.uid}, {res.username}, {res.pcr_hash}, {res.pubkey}')
+        return jsonify({"message": "User created"}),201
     except:
         logger.error("Could not create user")
         logger.error(request.form.listvalues())

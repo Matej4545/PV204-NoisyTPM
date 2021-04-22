@@ -56,3 +56,22 @@ Linux: `source venv/bin/activate`
 
 3. install requirements
 `pip install -r requirements.txt`
+
+#### API calls
+
+In order to register new client, one may send a POST request to `<URL>:5000/register` with the following body:
+```JSON
+{
+    "username": "User Name",
+    "pubkey": "Public Key from TPM",
+    "pcr_hash": "Hash of PCR values from TPM"
+}
+```
+
+To purge the entries (util function for demonstration purposes only) one can send POST request to `<URL>:5000/purge` with following body:
+```JOSN
+{
+  "magic":"please"
+}
+```
+WARNING: All messages and users will be deleted even from serialized data!
