@@ -6,7 +6,6 @@ from noise.connection import NoiseConnection, Keypair
 from sys import argv
 import constants
 import argparse
-import threading
 
 
 class Client:
@@ -36,7 +35,7 @@ class Client:
         self.noise.start_handshake()
         message = self.noise.write_message()
         self.sock.send(message)
-        received = self.sock.recv(4096)
+        received = self.sock.recv(constants.CLIENT_PORT)
         payload = self.noise.read_message(received)
 
     def send_encrypted_msg(self, message: str):
@@ -61,9 +60,9 @@ class Client:
             self.sock.close()
 
     def receive_and_decrypt_msg(self):
-        ciphertext = self.sock.recv(4096)
+        ciphertext = self.sock.recv(constants.CLIENT_PORT)
         plaintext = self.noise.decrypt(ciphertext)
-        print(f'Server: {plaintext.decode("utf-8") }')
+        print(plaintext)
 
     def register(self):
         # TODO: read TPMs PCR values and somehow send them to a server
