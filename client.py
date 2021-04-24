@@ -112,7 +112,7 @@ if __name__ == "__main__":
         metavar="MESSAGE",
         dest="message",
         type=str,
-        nargs='+',
+        nargs="+",
         help="Specify message as argument. For interactive session please omit.",
     )
     parser.add_argument(
