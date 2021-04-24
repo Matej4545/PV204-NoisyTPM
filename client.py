@@ -9,9 +9,11 @@ import argparse
 
 
 class Client:
-    def __init__(self):
+    def __init__(self, server, port):
         self.sock = socket.socket()
         self.key_pair = ED25519().generate_keypair()
+        self.ip = server
+        self.port = port
 
     def exchange_public_keys(self) -> bytes:
         self.sock.send(self.key_pair.public_bytes)
@@ -51,13 +53,16 @@ class Client:
                 continue
             if user_input.lower() in ["q", "quit", "exit"]:
                 return
-            self.sock = socket.socket()
-            self.sock.connect((self.ip, self.port))
-            self.set_connection_keys()
-            self.noise_handshake()
-            self.send_encrypted_msg(user_input)
-            self.receive_and_decrypt_msg()
-            self.sock.close()
+            self.communicate(user_input)
+
+    def communicate(self, message):
+        self.sock = socket.socket()
+        self.sock.connect((self.ip, self.port))
+        self.set_connection_keys()
+        self.noise_handshake()
+        self.send_encrypted_msg(message)
+        self.receive_and_decrypt_msg()
+        self.sock.close()
 
     def receive_and_decrypt_msg(self):
         ciphertext = self.sock.recv(constants.CLIENT_PORT)
@@ -69,15 +74,9 @@ class Client:
         print("Registration complete, your identifier is <TOP_SECRET_PCR_HASH>")
         return True
 
-    def run(self, ip, port, message):
-        self.ip = ip
-        self.port = port
+    def run(self, message):
         if message:  # One time
-            self.sock.connect((ip, port))
-            self.set_connection_keys()
-            self.noise_handshake()
-            self.send_encrypted_msg(message)
-            self.receive_and_decrypt_msg()
+            self.communicate(message)
         else:  # Multiple messages
             self.send_messages()
 
@@ -95,7 +94,6 @@ if __name__ == "__main__":
         dest="server",
         metavar="IP",
         type=str,
-        nargs=1,
         default="localhost",
         help="An IP address or hostname of the server.",
     )
@@ -105,7 +103,6 @@ if __name__ == "__main__":
         dest="port",
         metavar="PORT",
         type=int,
-        nargs=1,
         default=5555,
         help="A port where the server is listening.",
     )
@@ -115,7 +112,7 @@ if __name__ == "__main__":
         metavar="MESSAGE",
         dest="message",
         type=str,
-        nargs="+",
+        nargs='+',
         help="Specify message as argument. For interactive session please omit.",
     )
     parser.add_argument(
@@ -129,12 +126,10 @@ if __name__ == "__main__":
 
     try:
         message = "" if args.message is None else "".join(args.message).strip()
-        server = args.server[0].strip()
-        port = args.port[0]
-        client = Client()
+        client = Client(args.server.strip(), args.port)
         if args.register:
             client.register()
-        client.run(server, port, message)
+        client.run(message)
     except Exception as e:
         print("An error occured! Quitting app.")
         print(e)
