@@ -1,11 +1,15 @@
 import socket
-
+import pickle
 from cryptography.hazmat.primitives import serialization
 from noise.backends.default.diffie_hellmans import ED25519
 from noise.connection import NoiseConnection, Keypair
 from sys import argv
+
 import constants
 import argparse
+import TPM2.Tpm as Tpm2
+from TPM2.Crypt import Crypto
+from tpm2_util import get_signed_pcr_values
 
 
 class Client:
@@ -31,6 +35,18 @@ class Client:
             ),
         )
         self.noise.set_keypair_from_public_bytes(Keypair.REMOTE_STATIC, server_public_key)
+
+    def tpm_connect(self, use_simulator=False):
+        self.tpm = Tpm2.Tpm(useSimulator=use_simulator)
+        self.tpm.connect()
+
+    def quote_tpm_data(self, pcr_bitmap):
+        self.tpm_connect(use_simulator=False)
+        nonce = Crypto.randomBytes(20)
+        tpm_data = get_signed_pcr_values(self.tpm, nonce, pcr_bitmap)
+        if tpm_data is None:
+            raise RuntimeError("Oh no! Something malicious has happened! Signed pcr values were not provided.")
+        return tpm_data
 
     def noise_handshake(self):
         self.noise.set_as_initiator()
