@@ -1,3 +1,4 @@
+import pickle
 import socket
 
 from cryptography.hazmat.primitives import serialization
@@ -53,7 +54,7 @@ class Server:
 
     def set_connection_keys(self, conn):
         client_public_key = self.exchange_public_keys(conn)
-        self.noise = NoiseConnection.from_name(b"Noise_KK_25519_AESGCM_SHA256")
+        self.noise = NoiseConnection.from_name(b"Noise_KKpsk0_25519_AESGCM_SHA256")
         self.noise.set_keypair_from_private_bytes(
             Keypair.STATIC,
             self.key_pair.private.private_bytes(
@@ -65,8 +66,22 @@ class Server:
         self.noise.set_keypair_from_public_bytes(Keypair.REMOTE_STATIC, client_public_key)
         logger.debug(f"Keys set successfully.")
 
+    def receive_tpm_data(self, conn):
+        # TODO better storing client's tpm_data
+        self.tpm_data = conn.recv(4096)
+        self.tpm_data = pickle.loads(self.tpm_data)
+        logger.debug(f"TPM data has been received.")
+
+    def preshared_tpm_value(self, conn) -> bytes:
+        self.receive_tpm_data(conn)
+        data, _, _ = self.tpm_data
+        return bytes(data[-32:])
+
     def noise_handshake(self, conn):
+        logger.debug(f"Noise handshake")
         self.noise.set_as_responder()
+        tpm_pcr_preshared = self.preshared_tpm_value(conn)
+        self.noise.set_psks(psk=tpm_pcr_preshared)
         self.noise.start_handshake()
         # Perform handshake. Break when finished
         for action in cycle(["receive", "send"]):
