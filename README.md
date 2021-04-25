@@ -75,3 +75,7 @@ To purge the entries (util function for demonstration purposes only) one can sen
 }
 ```
 WARNING: All messages and users will be deleted even from serialized data!
+   
+#### Note on usage of physical TPM on Linux
+It is possible that using physical TPM on Linux will require you to set your access permissions accordingly.
+More on this issue [here](https://superuser.com/questions/1463364/accessing-trusted-platform-moduletpm-without-root-permission).
