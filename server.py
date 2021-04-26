@@ -34,6 +34,7 @@ class Server:
         self.user_list = []
         self.message_list = []
         self.requests = []
+        self.active_sessions = []
         self.deserialize()
         self.isRunning = True
         logger.info("Server initialized.")
@@ -41,9 +42,10 @@ class Server:
     def start_listening(self):
         logger.info("Start listening")
         while self.isRunning:
+            #Conn is new socket
             conn, addr = self.sock.accept()
             self.requests.append((conn, addr))
-            logger.info(f"Accepted connection from {addr}")
+            logger.info(f"New connection from {addr} in queue (queue len {len(self.requests)}")
         logger.info("Stop listening")
 
     def exchange_public_keys(self, conn) -> bytes:
@@ -76,27 +78,33 @@ class Server:
                 ciphertext = self.noise.write_message()
                 conn.sendall(ciphertext)
             elif action == "receive":
-                data = conn.recv(constants.CLIENT_PORT)
+                data = conn.recv(4096)
                 plaintext = self.noise.read_message(data)
 
-    def communication(self, conn):
+    def communication(self, conn: socket.socket):
         # Endless loop "echoing" received data
         while True:
-            data = conn.recv(constants.CLIENT_PORT)
+            data = conn.recv(4096)
             if not data:
-                break
+                # conn.getsockname()
+                peer_info = conn.getpeername()
+                logger.debug(f'No data in {peer_info}, closing socket.')
+                conn.close()
+                logger.info(f"Socket {peer_info} closed.")
+                return
             received = self.noise.decrypt(data)
             logger.debug(f"Request received, len: {len(received)}")
-            self.handle_request(received)
-            conn.sendall(self.noise.encrypt(b"Successful!"))
-        logger.debug(f"End communication.")
+            self.handle_request(received, conn.getpeername()) #Now only port, should be user UUID based on TPM
+            response = f'Success, len: {len(received)}, received data: \'{received}\''
+            conn.sendall(self.noise.encrypt(response.encode('UTF-8')))
 
-    def handle_request(self, request):
+    def handle_request(self, request, user=None):
         """This should include logic to start TPM hash evaluation, register new client or whatever"""
         logger.debug(f"Payload: {request}")
         # TODO: connect with user key
-        self.message_list.append(interfaces.Message("key", request.decode("utf-8")))
-        logger.debug(f"messages length: {len(self.message_list)}")
+        user = f"{user[0]}:{user[1]}"
+        self.message_list.append(interfaces.Message(user, request.decode("utf-8")))
+        logger.debug(f"Message length: {len(self.message_list)}")
 
     def deserialize_from_file(self, file) -> dict:
         """Method to read objects from file using jsonpickle"""
@@ -141,12 +149,25 @@ class Server:
     def handle_requests(self):
         while self.isRunning:
             if len(self.requests) != 0:
-                req = self.requests.pop()
-                logger.debug(f"Serving request {req}")
-                conn = req[0]
-                self.set_connection_keys(conn)
-                self.noise_handshake(conn)
-                self.communication(conn)
+                try:
+                    req = self.requests.pop()
+                    logger.debug(f"Serving request {req[0].getpeername()}")
+                    conn: socket.socket = req[0]
+                    self.set_connection_keys(conn)
+                    self.noise_handshake(conn)
+                    # Set keepalive
+                    conn.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+                    conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 1) #After 1 second
+                    conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 5) #Every 5 seconds
+                    conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 5) #End after 5 failes attempts
+                    conn.ioctl(socket.SIO_KEEPALIVE_VALS, (1, 10000, 3000))
+                    logger.info(f"Request from {conn.getpeername()} is active.")
+                    self.communication(conn)
+                    logger.debug(f"Looking for new requests.")
+                except Exception as e:
+                    logger.error(f"Exception occured while handling request {req}",exc_info=1)
+                    continue
+
 
     def purge(self):
         self.message_list.clear()

@@ -45,29 +45,50 @@ class Client:
         self.sock.send(encrypted_message)
 
     def send_messages(self):
-        print("You can write messages now, [q, quit, exit] to quit:")
+        print("________________")
+        print(f"Connected to {self.sock.getpeername()} from {self.sock.getsockname()}")
+        print("You can write messages now, [r] to re-estabilish connection, [q, quit, exit] to quit:")
+        print("________________")
         while True:
             user_input = input("Message: ")
             if len(user_input) == 0:
-                print("Please input valid message, [q, quit, exit] to quit.")
+                print("Please input valid message, [r] to re-estabilish connection, [q, quit, exit] to quit.")
+                continue
+            if user_input.lower() in ["r"]:
+                self.end_connection()
+                self.set_connection()
+                print("________________")
+                print(f"New connection to {self.sock.getpeername()} from {self.sock.getsockname()}")
+                print("________________")
                 continue
             if user_input.lower() in ["q", "quit", "exit"]:
                 return
             self.communicate(user_input)
 
     def communicate(self, message):
-        self.sock = socket.socket()
-        self.sock.connect((self.ip, self.port))
-        self.set_connection_keys()
-        self.noise_handshake()
+        #Trying to send multiple messages with one session
         self.send_encrypted_msg(message)
         self.receive_and_decrypt_msg()
+
+    def set_connection(self):
+        print(f"Initializing connection to {self.ip}:{self.port}...", end="")
+        self.sock = socket.socket()
+        self.sock.connect((self.ip, self.port))
+        print("OK\nSetting Noise keys...", end="")
+        self.set_connection_keys()
+        print("OK\nPerforming Noise handshake...", end="")
+        self.noise_handshake()
+        print("OK\n")
+
+    def end_connection(self):
+        print("Closing connection...", end="")
         self.sock.close()
+        print("OK")
 
     def receive_and_decrypt_msg(self):
         ciphertext = self.sock.recv(constants.CLIENT_PORT)
-        plaintext = self.noise.decrypt(ciphertext)
-        print(plaintext)
+        plaintext = self.noise.decrypt(ciphertext).decode("UTF-8")
+        print(f"Server response: {plaintext}", end="\n")
 
     def register(self):
         # TODO: read TPMs PCR values and somehow send them to a server
@@ -75,10 +96,12 @@ class Client:
         return True
 
     def run(self, message):
+        self.set_connection()
         if message:  # One time
             self.communicate(message)
         else:  # Multiple messages
             self.send_messages()
+        self.end_connection()
 
 
 if __name__ == "__main__":
