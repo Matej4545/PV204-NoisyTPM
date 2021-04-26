@@ -21,7 +21,7 @@ class Client:
 
     def exchange_public_keys(self) -> bytes:
         self.sock.send(self.key_pair.public_bytes)
-        return self.sock.recv(constants.SERVER_PORT)
+        return self.sock.recv(constants.SERVER_NOISE_PORT)
 
     def set_connection_keys(self):
         server_public_key = self.exchange_public_keys()
