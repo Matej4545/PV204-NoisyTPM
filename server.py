@@ -116,7 +116,7 @@ class Server:
                     ciphertext = self.noise.write_message()
                     conn.sendall(ciphertext)
                 elif action == "receive":
-                    data = conn.recv(constants.CLIENT_PORT)
+                    data = conn.recv(constants.SOCK_BUFFER)
                     plaintext = self.noise.read_message(data)
         except NoiseHandshakeError:
             logger.error("Error in handshake.")
@@ -215,7 +215,7 @@ class Server:
 
     def initialize(self):
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.sock.bind(("0.0.0.0", constants.SERVER_PORT))
+        self.sock.bind(("0.0.0.0", constants.SERVER_NOISE_PORT))
         self.sock.listen(1)
         self.listen_thread = threading.Thread(target=self.start_listening, daemon=True)
         self.req_thread = threading.Thread(target=self.handle_requests, daemon=True)
@@ -296,4 +296,4 @@ def sigint_handler(signal_received, frame):
 
 if __name__ == "__main__":
     signal(SIGINT, sigint_handler)
-    app.run(port=constants.SERVER_PORT, host=constants.SERVER_LISTEN_IP, ssl_context=constants.SERVER_SSL_POLICY)
+    app.run(port=constants.SERVER_FRONTEND_PORT, host=constants.SERVER_LISTEN_IP, ssl_context=constants.SERVER_SSL_POLICY)
