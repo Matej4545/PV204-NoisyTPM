@@ -5,6 +5,7 @@ from cryptography.hazmat.primitives import serialization
 from itertools import cycle
 from noise.backends.default.diffie_hellmans import ED25519
 from noise.connection import NoiseConnection, Keypair
+from noise.exceptions import NoiseHandshakeError, NoiseValueError
 from flask import Flask, render_template, request, jsonify
 from os import path, makedirs
 import constants
@@ -41,13 +42,17 @@ class Server:
         logger.info("Server initialized.")
 
     def start_listening(self):
-        logger.info("Start listening")
-        while self.isRunning:
-            # Conn is new socket
-            conn, addr = self.sock.accept()
-            self.requests.append((conn, addr))
-            logger.info(f"New connection from {addr} in queue (queue len {len(self.requests)}")
-        logger.info("Stop listening")
+        try:
+            logger.info("Start listening")
+            while self.isRunning:
+                # Conn is new socket
+                conn, addr = self.sock.accept()
+                self.requests.append((conn, addr))
+                logger.info(f"New connection from {addr} in queue (queue len {len(self.requests)}")
+            logger.info("Stop listening")
+        except Exception:
+            logging.error("An error occured in listener method!", exc_info=1)
+            self.restart()
 
     def exchange_public_keys(self, conn) -> bytes:
         client_public_key = conn.recv(constants.SOCK_BUFFER)
@@ -55,18 +60,23 @@ class Server:
         return client_public_key
 
     def set_connection_keys(self, conn):
-        client_public_key = self.exchange_public_keys(conn)
-        self.noise = NoiseConnection.from_name(b"Noise_KK_25519_AESGCM_SHA256")
-        self.noise.set_keypair_from_private_bytes(
-            Keypair.STATIC,
-            self.key_pair.private.private_bytes(
-                format=serialization.PrivateFormat.Raw,
-                encoding=serialization.Encoding.Raw,
-                encryption_algorithm=serialization.NoEncryption(),
-            ),
-        )
-        self.noise.set_keypair_from_public_bytes(Keypair.REMOTE_STATIC, client_public_key)
-        logger.debug(f"Keys set successfully.")
+        try:
+            client_public_key = self.exchange_public_keys(conn)
+            self.noise = NoiseConnection.from_name(b"Noise_KK_25519_AESGCM_SHA256")
+            self.noise.set_keypair_from_private_bytes(
+                Keypair.STATIC,
+                self.key_pair.private.private_bytes(
+                    format=serialization.PrivateFormat.Raw,
+                    encoding=serialization.Encoding.Raw,
+                    encryption_algorithm=serialization.NoEncryption(),
+                ),
+            )
+            self.noise.set_keypair_from_public_bytes(Keypair.REMOTE_STATIC, client_public_key)
+            logger.debug(f"Keys set successfully.")
+            return True
+        except NoiseValueError:
+            logger.debug("Not valid Noise communication - invalid length of public bytes.")
+            return False
 
     def receive_tpm_data(self, conn):
         # TODO better storing client's tpm_data
@@ -80,18 +90,21 @@ class Server:
         return bytes(data[-32:])
 
     def noise_handshake(self, conn):
-        self.noise.set_as_responder()
-        self.noise.start_handshake()
-        # Perform handshake. Break when finished
-        for action in cycle(["receive", "send"]):
-            if self.noise.handshake_finished:
-                break
-            elif action == "send":
-                ciphertext = self.noise.write_message()
-                conn.sendall(ciphertext)
-            elif action == "receive":
-                data = conn.recv(constants.SOCK_BUFFER)
-                plaintext = self.noise.read_message(data)
+        try:
+            self.noise.set_as_responder()
+            self.noise.start_handshake()
+            # Perform handshake. Break when finished
+            for action in cycle(["receive", "send"]):
+                if self.noise.handshake_finished:
+                    break
+                elif action == "send":
+                    ciphertext = self.noise.write_message()
+                    conn.sendall(ciphertext)
+                elif action == "receive":
+                    data = conn.recv(constants.SOCK_BUFFER)
+                    plaintext = self.noise.read_message(data)
+        except NoiseHandshakeError:
+            logger.error("Error in handshake.")
 
     def communication(self, conn: socket.socket):
         # Endless loop "echoing" received data
@@ -164,18 +177,19 @@ class Server:
                     req = self.requests.pop()
                     logger.debug(f"Serving request {req[0].getpeername()}")
                     conn: socket.socket = req[0]
-                    self.set_connection_keys(conn)
+                    if not self.set_connection_keys(conn):
+                        conn.close()
+                        continue
                     self.noise_handshake(conn)
                     # Set keepalive
                     conn.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
                     conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 1)  # After 1 second
                     conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 5)  # Every 5 seconds
                     conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 5)  # End after 5 failes attempts
-                    conn.ioctl(socket.SIO_KEEPALIVE_VALS, (1, 10000, 3000))
                     logger.info(f"Request from {conn.getpeername()} is active.")
                     self.communication(conn)
                     logger.debug(f"Looking for new requests.")
-                except Exception as e:
+                except Exception:
                     logger.error(f"Exception occured while handling request {req}", exc_info=1)
                     continue
 
@@ -199,7 +213,16 @@ class Server:
         return user
 
     def stop(self):
-        self.serialize()
+        try:
+            self.req_thread.join()
+            self.listen_thread.join()
+            self.sock.close()
+        finally:
+            self.serialize()
+    
+    def restart(self):
+        self.stop()
+        self.initialize()
 
 
 server = Server()
