@@ -86,7 +86,6 @@ class Server:
         while True:
             data = conn.recv(4096)
             if not data:
-                # conn.getsockname()
                 peer_info = conn.getpeername()
                 logger.debug(f'No data in {peer_info}, closing socket.')
                 conn.close()
@@ -176,7 +175,7 @@ class Server:
 
     def initialize(self):
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.sock.bind(("localhost", constants.SERVER_PORT))
+        self.sock.bind(("0.0.0.0", constants.SERVER_PORT))
         self.sock.listen(1)
         self.listen_thread = threading.Thread(target=self.start_listening, daemon=True)
         self.req_thread = threading.Thread(target=self.handle_requests, daemon=True)
