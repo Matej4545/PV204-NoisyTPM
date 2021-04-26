@@ -66,7 +66,7 @@ class Client:
             self.communicate(user_input)
 
     def communicate(self, message):
-        #Trying to send multiple messages with one session
+        # Trying to send multiple messages with one session
         self.send_encrypted_msg(message)
         self.receive_and_decrypt_msg()
 

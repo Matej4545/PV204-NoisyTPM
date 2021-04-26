@@ -42,7 +42,7 @@ class Server:
     def start_listening(self):
         logger.info("Start listening")
         while self.isRunning:
-            #Conn is new socket
+            # Conn is new socket
             conn, addr = self.sock.accept()
             self.requests.append((conn, addr))
             logger.info(f"New connection from {addr} in queue (queue len {len(self.requests)}")
@@ -87,15 +87,15 @@ class Server:
             data = conn.recv(4096)
             if not data:
                 peer_info = conn.getpeername()
-                logger.debug(f'No data in {peer_info}, closing socket.')
+                logger.debug(f"No data in {peer_info}, closing socket.")
                 conn.close()
                 logger.info(f"Socket {peer_info} closed.")
                 return
             received = self.noise.decrypt(data)
             logger.debug(f"Request received, len: {len(received)}")
-            self.handle_request(received, conn.getpeername()) #Now only port, should be user UUID based on TPM
-            response = f'Success, len: {len(received)}, received data: \'{received}\''
-            conn.sendall(self.noise.encrypt(response.encode('UTF-8')))
+            self.handle_request(received, conn.getpeername())  # Now only port, should be user UUID based on TPM
+            response = f"Success, len: {len(received)}, received data: '{received}'"
+            conn.sendall(self.noise.encrypt(response.encode("UTF-8")))
 
     def handle_request(self, request, user=None):
         """This should include logic to start TPM hash evaluation, register new client or whatever"""
@@ -156,17 +156,16 @@ class Server:
                     self.noise_handshake(conn)
                     # Set keepalive
                     conn.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
-                    conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 1) #After 1 second
-                    conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 5) #Every 5 seconds
-                    conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 5) #End after 5 failes attempts
+                    conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 1)  # After 1 second
+                    conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 5)  # Every 5 seconds
+                    conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 5)  # End after 5 failes attempts
                     conn.ioctl(socket.SIO_KEEPALIVE_VALS, (1, 10000, 3000))
                     logger.info(f"Request from {conn.getpeername()} is active.")
                     self.communication(conn)
                     logger.debug(f"Looking for new requests.")
                 except Exception as e:
-                    logger.error(f"Exception occured while handling request {req}",exc_info=1)
+                    logger.error(f"Exception occured while handling request {req}", exc_info=1)
                     continue
-
 
     def purge(self):
         self.message_list.clear()
