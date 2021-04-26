@@ -49,7 +49,7 @@ class Server:
         logger.info("Stop listening")
 
     def exchange_public_keys(self, conn) -> bytes:
-        client_public_key = conn.recv(constants.CLIENT_PORT)
+        client_public_key = conn.recv(4096)
         conn.send(self.key_pair.public_bytes)
         return client_public_key
 
