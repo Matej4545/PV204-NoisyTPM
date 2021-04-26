@@ -1,4 +1,5 @@
 import socket
+import pickle
 
 from cryptography.hazmat.primitives import serialization
 from itertools import cycle
@@ -49,7 +50,7 @@ class Server:
         logger.info("Stop listening")
 
     def exchange_public_keys(self, conn) -> bytes:
-        client_public_key = conn.recv(4096)
+        client_public_key = conn.recv(constants.SOCK_BUFFER)
         conn.send(self.key_pair.public_bytes)
         return client_public_key
 
@@ -67,6 +68,17 @@ class Server:
         self.noise.set_keypair_from_public_bytes(Keypair.REMOTE_STATIC, client_public_key)
         logger.debug(f"Keys set successfully.")
 
+    def receive_tpm_data(self, conn):
+        # TODO better storing client's tpm_data
+        self.tpm_data = conn.recv(constants.SOCK_BUFFER)
+        self.tpm_data = pickle.loads(self.tpm_data)
+        logger.debug(f"TPM data has been received.")
+
+    def preshared_tpm_value(self, conn) -> bytes:
+        self.receive_tpm_data(conn)
+        data, _, _ = self.tpm_data
+        return bytes(data[-32:])
+
     def noise_handshake(self, conn):
         self.noise.set_as_responder()
         self.noise.start_handshake()
@@ -78,13 +90,13 @@ class Server:
                 ciphertext = self.noise.write_message()
                 conn.sendall(ciphertext)
             elif action == "receive":
-                data = conn.recv(4096)
+                data = conn.recv(constants.SOCK_BUFFER)
                 plaintext = self.noise.read_message(data)
 
     def communication(self, conn: socket.socket):
         # Endless loop "echoing" received data
         while True:
-            data = conn.recv(4096)
+            data = conn.recv(constants.SOCK_BUFFER)
             if not data:
                 peer_info = conn.getpeername()
                 logger.debug(f"No data in {peer_info}, closing socket.")
@@ -246,4 +258,4 @@ def sigint_handler(signal_received, frame):
 
 if __name__ == "__main__":
     signal(SIGINT, sigint_handler)
-    app.run(port=5000)
+    app.run(port=constants.SERVER_PORT, host=constants.SERVER_LISTEN_IP, ssl_context=constants.SERVER_SSL_POLICY)
