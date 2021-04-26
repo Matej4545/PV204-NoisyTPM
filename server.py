@@ -89,7 +89,7 @@ class Server:
         self.receive_tpm_data(conn)
         data, _, _ = self.tpm_data
         return bytes(data[-32:])
-      
+
     def receive_tpm_data(self, conn):
         # TODO better storing client's tpm_data
         self.tpm_data = conn.recv(4096)
