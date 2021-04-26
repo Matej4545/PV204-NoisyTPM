@@ -219,7 +219,7 @@ class Server:
             self.sock.close()
         finally:
             self.serialize()
-    
+
     def restart(self):
         self.stop()
         self.initialize()
