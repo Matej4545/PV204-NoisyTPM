@@ -37,7 +37,7 @@ class Client:
         self.noise.start_handshake()
         message = self.noise.write_message()
         self.sock.send(message)
-        received = self.sock.recv(constants.CLIENT_PORT)
+        received = self.sock.recv(constants.SOCK_BUFFER)
         payload = self.noise.read_message(received)
 
     def send_encrypted_msg(self, message: str):
@@ -86,7 +86,7 @@ class Client:
         print("OK")
 
     def receive_and_decrypt_msg(self):
-        ciphertext = self.sock.recv(constants.CLIENT_PORT)
+        ciphertext = self.sock.recv(constants.SOCK_BUFFER)
         plaintext = self.noise.decrypt(ciphertext).decode("UTF-8")
         print(f"Server response: {plaintext}", end="\n")
 
