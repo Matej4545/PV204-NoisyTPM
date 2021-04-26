@@ -53,7 +53,6 @@ class Server:
             logger.info("Stop listening")
         except Exception:
             logging.error("An error occured in listener method!", exc_info=1)
-            self.restart()
 
     def exchange_public_keys(self, conn) -> bytes:
         client_public_key = conn.recv(constants.SOCK_BUFFER)
@@ -112,7 +111,7 @@ class Server:
 
     def communication(self, conn: socket.socket):
         # Endless loop "echoing" received data
-        while True:
+        while self.isRunning:
             data = conn.recv(constants.SOCK_BUFFER)
             if not data:
                 peer_info = conn.getpeername()
@@ -203,11 +202,13 @@ class Server:
         self.serialize()
 
     def initialize(self):
+        self.should_restart = False
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.sock.bind(("0.0.0.0", constants.SERVER_NOISE_PORT))
         self.sock.listen(1)
         self.listen_thread = threading.Thread(target=self.start_listening, daemon=True)
         self.req_thread = threading.Thread(target=self.handle_requests, daemon=True)
+        self.isRunning = True
         self.listen_thread.start()
         self.req_thread.start()
 
@@ -218,15 +219,9 @@ class Server:
 
     def stop(self):
         try:
-            self.req_thread.join()
-            self.listen_thread.join()
-            self.sock.close()
+            self.isRunning = False
         finally:
             self.serialize()
-
-    def restart(self):
-        self.stop()
-        self.initialize()
 
 
 server = Server()
@@ -285,4 +280,6 @@ def sigint_handler(signal_received, frame):
 
 if __name__ == "__main__":
     signal(SIGINT, sigint_handler)
-    app.run(port=constants.SERVER_FRONTEND_PORT, host=constants.SERVER_LISTEN_IP, ssl_context=constants.SERVER_SSL_POLICY)
+    app.run(
+        port=constants.SERVER_FRONTEND_PORT, host=constants.SERVER_LISTEN_IP, ssl_context=constants.SERVER_SSL_POLICY
+    )
