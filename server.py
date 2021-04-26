@@ -90,17 +90,6 @@ class Server:
         data, _, _ = self.tpm_data
         return bytes(data[-32:])
 
-    def receive_tpm_data(self, conn):
-        # TODO better storing client's tpm_data
-        self.tpm_data = conn.recv(4096)
-        self.tpm_data = pickle.loads(self.tpm_data)
-        logger.debug(f"TPM data has been received.")
-
-    def preshared_tpm_value(self, conn) -> bytes:
-        self.receive_tpm_data(conn)
-        data, _, _ = self.tpm_data
-        return bytes(data[-32:])
-
     def noise_handshake(self, conn):
         try:
             logger.debug(f"Noise handshake")
