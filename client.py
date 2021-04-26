@@ -1,11 +1,15 @@
 import socket
-
+import pickle
 from cryptography.hazmat.primitives import serialization
 from noise.backends.default.diffie_hellmans import ED25519
 from noise.connection import NoiseConnection, Keypair
 from sys import argv
+
 import constants
 import argparse
+import TPM2.Tpm as Tpm2
+from TPM2.Crypt import Crypto
+from tpm2_util import get_signed_pcr_values
 
 
 class Client:
@@ -21,7 +25,7 @@ class Client:
 
     def set_connection_keys(self):
         server_public_key = self.exchange_public_keys()
-        self.noise = NoiseConnection.from_name(b"Noise_KK_25519_AESGCM_SHA256")
+        self.noise = NoiseConnection.from_name(b"Noise_KKpsk0_25519_AESGCM_SHA256")
         self.noise.set_keypair_from_private_bytes(
             Keypair.STATIC,
             self.key_pair.private.private_bytes(
@@ -32,8 +36,29 @@ class Client:
         )
         self.noise.set_keypair_from_public_bytes(Keypair.REMOTE_STATIC, server_public_key)
 
+    def tpm_connect(self, use_simulator=False):
+        self.tpm = Tpm2.Tpm(useSimulator=use_simulator)
+        self.tpm.connect()
+
+    def quote_tpm_data(self, pcr_bitmap):
+        self.tpm_connect(use_simulator=False)
+        nonce = Crypto.randomBytes(20)
+        tpm_data = get_signed_pcr_values(self.tpm, nonce, pcr_bitmap)
+        if tpm_data is None:
+            raise RuntimeError("Oh no! Something malicious has happened! Signed pcr values were not provided.")
+        return tpm_data
+
+    def preshared_tpm_value(self) -> bytes:
+        pcr_bitmap = [0b11111111, 0b00000000, 0b00000000]  # Quote PCR 0-7
+        tpm_data = self.quote_tpm_data(pcr_bitmap)
+        self.sock.send(pickle.dumps(tpm_data))  # data, public key, signature
+        data, _, _ = tpm_data
+        return bytes(data[-32:])  # Quoted digest from TPM PCR
+
     def noise_handshake(self):
         self.noise.set_as_initiator()
+        tpm_pcr_preshared = self.preshared_tpm_value()
+        self.noise.set_psks(psk=tpm_pcr_preshared)
         self.noise.start_handshake()
         message = self.noise.write_message()
         self.sock.send(message)
