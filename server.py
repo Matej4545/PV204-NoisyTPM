@@ -240,7 +240,17 @@ def return_main():
 @app.route("/users", methods=["GET"])
 def return_users():
     """This is only for demonstration purposes."""
-    return render_template("users.html", len=len(server.user_list), user_list=server.user_list)
+    user_list = []
+    for user in server.user_list:
+        d = {
+            "uid": user.uid,
+            "username": user.username,
+            "pcr_hash": user.pcr_hash.hex(),
+            "pubkey_x": user.pubkey[0].hex(),
+            "pubkey_y": user.pubkey[1].hex(),
+        }
+        user_list.append(d)
+    return render_template("users.html", len=len(user_list), user_list=user_list)
 
 
 @app.route("/about", methods=["GET"])
