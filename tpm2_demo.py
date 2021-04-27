@@ -120,6 +120,9 @@ def tpm2_demo():
         hash23 = tu.get_pcr_values(tpm, pcr23)[0]
         print("PCR3 after: ", hash23.hex())
 
+    # end the communication with the TPM
+    tpm.close()
+
 
 if __name__ == "__main__":
     tpm2_demo()
