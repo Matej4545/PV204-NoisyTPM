@@ -1,10 +1,12 @@
 import pickle
 import socket
+import pickle
 
 from cryptography.hazmat.primitives import serialization
 from itertools import cycle
 from noise.backends.default.diffie_hellmans import ED25519
 from noise.connection import NoiseConnection, Keypair
+from noise.exceptions import NoiseHandshakeError, NoiseValueError
 from flask import Flask, render_template, request, jsonify
 from os import path, makedirs
 import constants
@@ -35,40 +37,50 @@ class Server:
         self.user_list = []
         self.message_list = []
         self.requests = []
+        self.active_sessions = []
         self.deserialize()
         self.isRunning = True
         logger.info("Server initialized.")
 
     def start_listening(self):
-        logger.info("Start listening")
-        while self.isRunning:
-            conn, addr = self.sock.accept()
-            self.requests.append((conn, addr))
-            logger.info(f"Accepted connection from {addr}")
-        logger.info("Stop listening")
+        try:
+            logger.info("Start listening")
+            while self.isRunning:
+                # Conn is new socket
+                conn, addr = self.sock.accept()
+                self.requests.append((conn, addr))
+                logger.info(f"New connection from {addr} in queue (queue len {len(self.requests)}")
+            logger.info("Stop listening")
+        except Exception:
+            logging.error("An error occured in listener method!", exc_info=1)
 
     def exchange_public_keys(self, conn) -> bytes:
-        client_public_key = conn.recv(constants.CLIENT_PORT)
+        client_public_key = conn.recv(constants.SOCK_BUFFER)
         conn.send(self.key_pair.public_bytes)
         return client_public_key
 
     def set_connection_keys(self, conn):
-        client_public_key = self.exchange_public_keys(conn)
-        self.noise = NoiseConnection.from_name(b"Noise_KKpsk0_25519_AESGCM_SHA256")
-        self.noise.set_keypair_from_private_bytes(
-            Keypair.STATIC,
-            self.key_pair.private.private_bytes(
-                format=serialization.PrivateFormat.Raw,
-                encoding=serialization.Encoding.Raw,
-                encryption_algorithm=serialization.NoEncryption(),
-            ),
-        )
-        self.noise.set_keypair_from_public_bytes(Keypair.REMOTE_STATIC, client_public_key)
-        logger.debug(f"Keys set successfully.")
+        try:
+            client_public_key = self.exchange_public_keys(conn)
+            self.noise = NoiseConnection.from_name(b"Noise_KKpsk0_25519_AESGCM_SHA256")
+            self.noise.set_keypair_from_private_bytes(
+                Keypair.STATIC,
+                self.key_pair.private.private_bytes(
+                    format=serialization.PrivateFormat.Raw,
+                    encoding=serialization.Encoding.Raw,
+                    encryption_algorithm=serialization.NoEncryption(),
+                ),
+            )
+            self.noise.set_keypair_from_public_bytes(Keypair.REMOTE_STATIC, client_public_key)
+            logger.debug(f"Keys set successfully.")
+            return True
+        except NoiseValueError:
+            logger.debug("Not valid Noise communication - invalid length of public bytes.")
+            return False
 
     def receive_tpm_data(self, conn):
         # TODO better storing client's tpm_data
-        self.tpm_data = conn.recv(4096)
+        self.tpm_data = conn.recv(constants.SOCK_BUFFER)
         self.tpm_data = pickle.loads(self.tpm_data)
         logger.debug(f"TPM data has been received.")
 
@@ -78,40 +90,48 @@ class Server:
         return bytes(data[-32:])
 
     def noise_handshake(self, conn):
-        logger.debug(f"Noise handshake")
-        self.noise.set_as_responder()
-        tpm_pcr_preshared = self.preshared_tpm_value(conn)
-        self.noise.set_psks(psk=tpm_pcr_preshared)
-        self.noise.start_handshake()
-        # Perform handshake. Break when finished
-        for action in cycle(["receive", "send"]):
-            if self.noise.handshake_finished:
-                break
-            elif action == "send":
-                ciphertext = self.noise.write_message()
-                conn.sendall(ciphertext)
-            elif action == "receive":
-                data = conn.recv(constants.CLIENT_PORT)
-                plaintext = self.noise.read_message(data)
+        try:
+            logger.debug(f"Noise handshake")
+            self.noise.set_as_responder()
+            tpm_pcr_preshared = self.preshared_tpm_value(conn)
+            self.noise.set_psks(psk=tpm_pcr_preshared)
+            self.noise.start_handshake()
+            # Perform handshake. Break when finished
+            for action in cycle(["receive", "send"]):
+                if self.noise.handshake_finished:
+                    break
+                elif action == "send":
+                    ciphertext = self.noise.write_message()
+                    conn.sendall(ciphertext)
+                elif action == "receive":
+                    data = conn.recv(constants.SOCK_BUFFER)
+                    plaintext = self.noise.read_message(data)
+        except NoiseHandshakeError:
+            logger.error("Error in handshake.")
 
-    def communication(self, conn):
+    def communication(self, conn: socket.socket):
         # Endless loop "echoing" received data
-        while True:
-            data = conn.recv(constants.CLIENT_PORT)
+        while self.isRunning:
+            data = conn.recv(constants.SOCK_BUFFER)
             if not data:
-                break
+                peer_info = conn.getpeername()
+                logger.debug(f"No data in {peer_info}, closing socket.")
+                conn.close()
+                logger.info(f"Socket {peer_info} closed.")
+                return
             received = self.noise.decrypt(data)
             logger.debug(f"Request received, len: {len(received)}")
-            self.handle_request(received)
-            conn.sendall(self.noise.encrypt(b"Successful!"))
-        logger.debug(f"End communication.")
+            self.handle_request(received, conn.getpeername())  # Now only port, should be user UUID based on TPM
+            response = f"Success, len: {len(received)}, received data: '{received}'"
+            conn.sendall(self.noise.encrypt(response.encode("UTF-8")))
 
-    def handle_request(self, request):
+    def handle_request(self, request, user=None):
         """This should include logic to start TPM hash evaluation, register new client or whatever"""
         logger.debug(f"Payload: {request}")
         # TODO: connect with user key
-        self.message_list.append(interfaces.Message("key", request.decode("utf-8")))
-        logger.debug(f"messages length: {len(self.message_list)}")
+        user = f"{user[0]}:{user[1]}"
+        self.message_list.append(interfaces.Message(user, request.decode("utf-8")))
+        logger.debug(f"Message length: {len(self.message_list)}")
 
     def deserialize_from_file(self, file) -> dict:
         """Method to read objects from file using jsonpickle"""
@@ -156,12 +176,25 @@ class Server:
     def handle_requests(self):
         while self.isRunning:
             if len(self.requests) != 0:
-                req = self.requests.pop()
-                logger.debug(f"Serving request {req}")
-                conn = req[0]
-                self.set_connection_keys(conn)
-                self.noise_handshake(conn)
-                self.communication(conn)
+                try:
+                    req = self.requests.pop()
+                    logger.debug(f"Serving request {req[0].getpeername()}")
+                    conn: socket.socket = req[0]
+                    if not self.set_connection_keys(conn):
+                        conn.close()
+                        continue
+                    self.noise_handshake(conn)
+                    # Set keepalive
+                    conn.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+                    conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 1)  # After 1 second
+                    conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 5)  # Every 5 seconds
+                    conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 5)  # End after 5 failes attempts
+                    logger.info(f"Request from {conn.getpeername()} is active.")
+                    self.communication(conn)
+                    logger.debug(f"Looking for new requests.")
+                except Exception:
+                    logger.error(f"Exception occured while handling request {req}", exc_info=1)
+                    continue
 
     def purge(self):
         self.message_list.clear()
@@ -169,11 +202,13 @@ class Server:
         self.serialize()
 
     def initialize(self):
+        self.should_restart = False
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.sock.bind(("localhost", constants.SERVER_PORT))
+        self.sock.bind(("0.0.0.0", constants.SERVER_NOISE_PORT))
         self.sock.listen(1)
         self.listen_thread = threading.Thread(target=self.start_listening, daemon=True)
         self.req_thread = threading.Thread(target=self.handle_requests, daemon=True)
+        self.isRunning = True
         self.listen_thread.start()
         self.req_thread.start()
 
@@ -183,7 +218,10 @@ class Server:
         return user
 
     def stop(self):
-        self.serialize()
+        try:
+            self.isRunning = False
+        finally:
+            self.serialize()
 
 
 server = Server()
@@ -242,4 +280,6 @@ def sigint_handler(signal_received, frame):
 
 if __name__ == "__main__":
     signal(SIGINT, sigint_handler)
-    app.run(port=5000)
+    app.run(
+        port=constants.SERVER_FRONTEND_PORT, host=constants.SERVER_LISTEN_IP, ssl_context=constants.SERVER_SSL_POLICY
+    )
