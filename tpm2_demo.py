@@ -16,12 +16,14 @@ def helper_bitmap_to_pcr_nums(bitmap: List[int]) -> List[int]:
 
 def tpm2_demo():
     """A TPM2 demo showcasing some of its functionalities.
-    Uses a real TPM by default.
+    Uses a TPM simulator by default.
     """
+    # set to True to use a TCP TPM. In that case a simulator needs to be running
+    # uses a real TPM when set to False
+    use_sim = True
+
     # host="127.0.0.1", port=2321
-    # set 'useSimulator' to True to use a TCP TPM. In that case a simulator needs to be running
-    # use a real TPM when set to False
-    tpm = Tpm2.Tpm(useSimulator=False)
+    tpm = Tpm2.Tpm(useSimulator=use_sim)
 
     # TPM object needs to connect to a real TPM or a simulator
     try:
@@ -107,6 +109,19 @@ def tpm2_demo():
         if i % 8 == 7:
             sep = ""
             print()
+
+    # we can also extend the PCR hash
+    # only for a simulator, OS will most likely block this for a real TPM to preserve integrity
+    if use_sim:
+        pcr23 = [0, 0, 0b10000000]
+        hash23 = tu.get_pcr_values(tpm, pcr23)[0]
+        print("\nPCR3 before:", hash23.hex())
+        tu.tpm_pcr_extend(tpm, 23, "RIP Dan Kaminsky")
+        hash23 = tu.get_pcr_values(tpm, pcr23)[0]
+        print("PCR3 after: ", hash23.hex())
+
+    # end the communication with the TPM
+    tpm.close()
 
 
 if __name__ == "__main__":

@@ -131,6 +131,21 @@ def tpm_self_verify_signature(tpm: Tpm, aik: TPM_HANDLE, sig: TPMU_SIGNATURE, da
     return True
 
 
+def tpm_pcr_extend(tpm: Tpm, pcr: int, value: str) -> bool:
+    """Extends 'pcr' with 'value'."""
+    hs = Crypto.tpmAlgToPy(TPM_ALG_ID.SHA1)()
+    hs.update(bytes(value, "UTF-8"))
+
+    digest = TPMT_HA(TPM_ALG_ID.SHA1, hs.digest())
+
+    try:
+        tpm.PCR_Extend(TPM_HANDLE.pcr(pcr), [digest])
+    except TpmError as tpm_e:
+        print(tpm_e)
+        return False
+    return True
+
+
 def get_random_bytes(tpm: Tpm, n: int) -> List[int]:
     """Get 'n' random bytes."""
     rnd_bytes = tpm.GetRandom(n)
