@@ -18,6 +18,8 @@ import interfaces
 from signal import signal, SIGINT
 from sys import exit
 
+from tpm2_util import ecdsa_validate
+
 # Set logging
 logger = logging.getLogger("server_logger")
 logger.setLevel(constants.SERVER_LOG_LEVEL)
@@ -78,15 +80,29 @@ class Server:
             logger.debug("Not valid Noise communication - invalid length of public bytes.")
             return False
 
-    def receive_tpm_data(self, conn):
-        # TODO better storing client's tpm_data
-        self.tpm_data = conn.recv(constants.SOCK_BUFFER)
-        self.tpm_data = pickle.loads(self.tpm_data)
+    def validate_check_client_tpm(self, tpm_data: tuple) -> bool:
+        data, (ec_x, ec_y), (sig_r, sig_s) = tpm_data
+        if not ecdsa_validate(ec_x, ec_y, sig_r, sig_s, data):
+            logger.info("TPM data were validated successfully.")
+            return False
+        for user in self.user_list:
+            if user.check(data[-32:]):  # comparing PCR digest
+                return True
+        return False
+
+    def receive_tpm_data(self, conn: socket.socket) -> tuple:
+        tpm_data = conn.recv(constants.SOCK_BUFFER)
+        tpm_data = pickle.loads(tpm_data)
         logger.debug(f"TPM data has been received.")
+        return tpm_data
 
     def preshared_tpm_value(self, conn) -> bytes:
-        self.receive_tpm_data(conn)
-        data, _, _ = self.tpm_data
+        tpm_data = self.receive_tpm_data(conn)
+        if not self.validate_check_client_tpm(tpm_data):
+            conn.send(b"0")
+            raise RuntimeError("The PCR value differs from the registered PCR value.")
+        conn.send(b"111")
+        data, _, _ = tpm_data
         return bytes(data[-32:])
 
     def noise_handshake(self, conn):
@@ -106,6 +122,8 @@ class Server:
                 elif action == "receive":
                     data = conn.recv(constants.SOCK_BUFFER)
                     plaintext = self.noise.read_message(data)
+        except RuntimeError:
+            logger.error("The client's PCR value differs from the registered PCR value.")
         except NoiseHandshakeError:
             logger.error("Error in handshake.")
 
