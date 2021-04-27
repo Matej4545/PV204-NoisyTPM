@@ -1,7 +1,7 @@
 import pickle
 import socket
 import pickle
-
+import base64
 from cryptography.hazmat.primitives import serialization
 from itertools import cycle
 from noise.backends.default.diffie_hellmans import ED25519
@@ -212,7 +212,7 @@ class Server:
         self.listen_thread.start()
         self.req_thread.start()
 
-    def create_user(self, username, pubkey, pcr_hash):
+    def create_user(self, username, pubkey: tuple, pcr_hash):
         user = interfaces.User(pubkey, pcr_hash, username)
         self.user_list.append(user)
         return user
@@ -260,16 +260,21 @@ def purge():
 @app.route("/register", methods=["POST"])
 def register():
     # Would be nice to validate parameters to prevent XSS
+    logger.debug(f"New request {request.json}")
     username = request.json["username"]
-    pcr_hash = request.json["pcr_hash"]
-    pubkey = request.json["pubkey"]
+    pcr_hash = base64.b64decode(bytes(request.json["pcr_hash"], constants.ENCODING))
+    pubkey_merged = base64.b64decode(bytes(request.json["pubkey"], constants.ENCODING))
+    pubkey = (pubkey_merged[:32], pubkey_merged[32:])
     try:
         res = server.create_user(username, pubkey, pcr_hash)
-        logger.debug(f"New user: {res.uid}, {res.username}, {res.pcr_hash}, {res.pubkey}")
-        return jsonify({"message": "User created"}), 201
+        logger.debug(
+            f"New user: {res.uid}, {res.username}, {res.pcr_hash.hex()}, EC_a: {res.pubkey[0].hex()}, EC_b: {res.pubkey[1].hex()}"
+        )
+        return jsonify({"username": res.username, "uid": res.uid}), 201
     except:
         logger.error("Could not create user")
-        logger.error(request.form.listvalues())
+        logger.error(request.json())
+        return 500
 
 
 def sigint_handler(signal_received, frame):

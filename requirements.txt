@@ -3,3 +3,4 @@ noiseprotocol==0.3.1
 flask==1.1.2
 jsonpickle==2.0.0
 pyopenssl==20.0.0
+requests==2.25.1
