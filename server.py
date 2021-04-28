@@ -42,6 +42,7 @@ class Server:
         self.active_sessions = []
         self.deserialize()
         self.isRunning = True
+        self.active_user = None
         logger.info("Server initialized.")
 
     def start_listening(self):
@@ -80,14 +81,21 @@ class Server:
             logger.debug("Not valid Noise communication - invalid length of public bytes.")
             return False
 
-    def validate_check_client_tpm(self, tpm_data: tuple) -> bool:
+    def validate_check_client_tpm(self, tpm_data: tuple, uid) -> bool:
         data, (ec_x, ec_y), (sig_r, sig_s) = tpm_data
         if not ecdsa_validate(ec_x, ec_y, sig_r, sig_s, data):
             logger.info("TPM data were validated successfully.")
             return False
         for user in self.user_list:
-            if user.check(data[-32:]):  # comparing PCR digest
-                return True
+            if str(user.uid) == uid:
+                logger.debug(f"User {user.uid} found. Comparing PCR Hash")
+                if user.check(data[-32:]):  # comparing PCR digest
+                    self.active_user = user
+                    logger.debug(f"PCR hash for user {user.uid} is OK.")
+                    return True
+                logger.warn(f"Received PCR Hash for {user.uid} is NOK!")
+                logger.debug(f"PCR sent: {user.pcr_hash}, PCR received {data[-32:]}")
+        logger.info(f"User not found!")
         return False
 
     def receive_tpm_data(self, conn: socket.socket) -> tuple:
@@ -97,8 +105,8 @@ class Server:
         return tpm_data
 
     def preshared_tpm_value(self, conn) -> bytes:
-        tpm_data = self.receive_tpm_data(conn)
-        if not self.validate_check_client_tpm(tpm_data):
+        tpm_data, uid = self.receive_tpm_data(conn)
+        if not self.validate_check_client_tpm(tpm_data, uid):
             conn.send(b"0")
             raise RuntimeError("The PCR value differs from the registered PCR value.")
         conn.send(b"111")
@@ -139,16 +147,15 @@ class Server:
                 return
             received = self.noise.decrypt(data)
             logger.debug(f"Request received, len: {len(received)}")
-            self.handle_request(received, conn.getpeername())  # Now only port, should be user UUID based on TPM
+            self.handle_request(received, self.active_user)
             response = f"Success, len: {len(received)}, received data: '{received}'"
             conn.sendall(self.noise.encrypt(response.encode("UTF-8")))
 
     def handle_request(self, request, user=None):
         """This should include logic to start TPM hash evaluation, register new client or whatever"""
         logger.debug(f"Payload: {request}")
-        # TODO: connect with user key
-        user = f"{user[0]}:{user[1]}"
-        self.message_list.append(interfaces.Message(user, request.decode("utf-8")))
+        username = "No User" if user is None else user.username
+        self.message_list.append(interfaces.Message(username, request.decode("utf-8")))
         logger.debug(f"Message length: {len(self.message_list)}")
 
     def deserialize_from_file(self, file) -> dict:
@@ -195,6 +202,8 @@ class Server:
         while self.isRunning:
             if len(self.requests) != 0:
                 try:
+                    # Clean active user
+                    self.active_user = None
                     req = self.requests.pop()
                     logger.debug(f"Serving request {req[0].getpeername()}")
                     conn: socket.socket = req[0]
