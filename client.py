@@ -54,7 +54,7 @@ class Client:
 
     def preshared_tpm_value(self) -> bytes:
         tpm_data = self.quote_tpm_data()
-        self.sock.send(pickle.dumps(tpm_data))  # data, public key, signature
+        self.sock.send(pickle.dumps((tpm_data, self.uid)))  # ((data, public key, signature), uid)
         data, _, _ = tpm_data
         return bytes(data[-32:])  # Quoted digest from TPM PCR
 
@@ -143,6 +143,8 @@ class Client:
             if response.status_code == 201:
                 print("Registration complete. Response from server is below.")
                 print(response.json())
+                self.username = response.json()["username"]
+                self.uid = response.json()["uid"]
                 with open(constants.CLIENT_DATA, "w") as f:  # Save user info
                     f.write(str(response.json()).replace("'", '"'))
                 return True
