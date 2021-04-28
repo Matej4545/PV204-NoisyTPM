@@ -9,6 +9,7 @@ import requests
 import base64
 import constants
 import argparse
+import simple_colors
 import TPM2.Tpm as Tpm2
 from TPM2.Crypt import Crypto
 from tpm2_util import get_signed_pcr_values
@@ -170,7 +171,12 @@ class Client:
         try:
             self.set_connection()
         except RuntimeError:
-            print("\n\n!!! Your PCR value has changed since you have registered to the server. !!!\n")
+            print(
+                simple_colors.red(
+                    "\n\n!!! Your PCR value has changed since you have registered to the server. !!!\n",
+                    ["blink", "bright"],
+                )
+            )
             return
         if message:  # One time
             self.communicate(message)
