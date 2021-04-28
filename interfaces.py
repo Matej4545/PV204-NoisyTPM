@@ -3,7 +3,7 @@ import datetime as dt
 
 
 class User(object):
-    def __init__(self, pubkey, pcr_hash, username=None):
+    def __init__(self, pubkey: tuple, pcr_hash: bytes, username=None):
         """Seriazable object representing an User entity"""
         self.pcr_hash = pcr_hash  # Probably we would like to hash it at some point?
         self.username = username
