@@ -164,7 +164,7 @@ class Client:
                 print(response.json())
                 self.username = response.json()["username"]
                 self.uid = response.json()["uid"]
-                with open(path.join(constants.CLIENT_DATA_PATH,constants.CLIENT_DATA), "w") as f:  # Save user info
+                with open(path.join(constants.CLIENT_DATA_PATH, constants.CLIENT_DATA), "w") as f:  # Save user info
                     f.write(str(response.json()).replace("'", '"'))
                 return True
             else:
@@ -209,7 +209,7 @@ class Client:
 
     def run(self, message):
         try:
-            with open(path.join(constants.CLIENT_DATA_PATH,constants.CLIENT_DATA), "r") as f:
+            with open(path.join(constants.CLIENT_DATA_PATH, constants.CLIENT_DATA), "r") as f:
                 data = json.load(f)
                 self.username = data["username"]
                 self.uid = data["uid"]
