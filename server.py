@@ -316,7 +316,7 @@ def return_users():
             "pcr_hash": user.pcr_hash.hex(),
             "pubkey_x": user.pubkey[0].hex(),
             "pubkey_y": user.pubkey[1].hex(),
-            "s": user.s.hex()
+            "s": user.s.hex(),
         }
         user_list.append(d)
     return render_template("users.html", len=len(user_list), user_list=user_list)

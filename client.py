@@ -131,10 +131,10 @@ class Client:
         print(f"Server response: {plaintext}", end="\n")
 
     def generate_keys(self):
-            key_pair = ED25519().generate_keypair()
-            self.public_key = key_pair.public
-            self.private_key = key_pair.private
-            self.store_keys()
+        key_pair = ED25519().generate_keypair()
+        self.public_key = key_pair.public
+        self.private_key = key_pair.private
+        self.store_keys()
 
     def register(self):
         try:
@@ -157,12 +157,8 @@ class Client:
 
             # Surpress SSL warning
             # This is only temporary due to dummy cert on server side
-            requests.packages.urllib3.disable_warnings(
-                requests.packages.urllib3.exceptions.InsecureRequestWarning
-            )  
-            response = requests.post(
-                url, json=data, verify=False
-            )  
+            requests.packages.urllib3.disable_warnings(requests.packages.urllib3.exceptions.InsecureRequestWarning)
+            response = requests.post(url, json=data, verify=False)
 
             if response.status_code == 201:
                 print("Registration complete. Response from server is below.")
@@ -171,7 +167,7 @@ class Client:
                 self.uid = response.json()["uid"]
 
                 # Save user info
-                with open(path.join(constants.CLIENT_DATA_PATH, constants.CLIENT_DATA), "w") as f:  
+                with open(path.join(constants.CLIENT_DATA_PATH, constants.CLIENT_DATA), "w") as f:
                     f.write(str(response.json()).replace("'", '"'))
                 return True
             else:
@@ -186,7 +182,7 @@ class Client:
 
     def store_keys(self):
         """Keys are stored in PEM format with weak predefined password. This is not secure!
-            Only for demonstration purposes. In real life, user should use their pass phrase"""
+        Only for demonstration purposes. In real life, user should use their pass phrase"""
 
         print(f"Storing keypair to {constants.CLIENT_DATA_PATH}...", end="")
         makedirs(constants.CLIENT_DATA_PATH, exist_ok=True)
