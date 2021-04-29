@@ -9,6 +9,7 @@ import requests
 import base64
 import constants
 import argparse
+import simple_colors
 import TPM2.Tpm as Tpm2
 from TPM2.Crypt import Crypto
 from tpm2_util import get_signed_pcr_values
@@ -53,13 +54,19 @@ class Client:
 
     def preshared_tpm_value(self) -> bytes:
         tpm_data = self.quote_tpm_data()
-        self.sock.send(pickle.dumps(tpm_data))  # data, public key, signature
+        self.sock.send(pickle.dumps((tpm_data, self.uid)))  # ((data, public key, signature), uid)
         data, _, _ = tpm_data
         return bytes(data[-32:])  # Quoted digest from TPM PCR
+
+    def get_server_pass_info_pcr(self) -> bool:
+        message = self.sock.recv(constants.SOCK_BUFFER)
+        return message.decode("UTF-8") == "OK"
 
     def noise_handshake(self):
         self.noise.set_as_initiator()
         tpm_pcr_preshared = self.preshared_tpm_value()
+        if not self.get_server_pass_info_pcr():
+            raise RuntimeError()
         self.noise.set_psks(psk=tpm_pcr_preshared)
         self.noise.start_handshake()
         message = self.noise.write_message()
@@ -136,6 +143,8 @@ class Client:
             if response.status_code == 201:
                 print("Registration complete. Response from server is below.")
                 print(response.json())
+                self.username = response.json()["username"]
+                self.uid = response.json()["uid"]
                 with open(constants.CLIENT_DATA, "w") as f:  # Save user info
                     f.write(str(response.json()).replace("'", '"'))
                 return True
@@ -161,7 +170,16 @@ class Client:
             print(
                 f"Some attributes from file {constants.CLIENT_DATA} are missing. File is probably corrupted. Please register again."
             )
-        self.set_connection()
+        try:
+            self.set_connection()
+        except RuntimeError:
+            print(
+                simple_colors.red(
+                    "\n\n!!! Your PCR value has changed since you have registered to the server. !!!\n",
+                    ["blink", "bright"],
+                )
+            )
+            return
         if message:  # One time
             self.communicate(message)
         else:  # Multiple messages
