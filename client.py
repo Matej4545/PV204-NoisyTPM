@@ -26,12 +26,15 @@ class Client:
         self.public_key = None
         self.private_key = None
 
-    def exchange_public_keys(self) -> bytes:
+    def send_uid(self):
         self.sock.send(self.uid.encode(constants.ENCODING))
+
+    def receive_public_key(self) -> bytes:
         return self.sock.recv(constants.SOCK_BUFFER)
 
     def set_connection_keys(self):
-        server_public_key = self.exchange_public_keys()
+        self.send_uid()
+        server_public_key = self.receive_public_key()
         self.noise = NoiseConnection.from_name(b"Noise_KKpsk0_25519_AESGCM_SHA256")
         self.noise.set_keypair_from_private_bytes(
             Keypair.STATIC,
@@ -48,7 +51,7 @@ class Client:
         self.tpm.connect()
 
     def quote_tpm_data(self):
-        self.tpm_connect(use_simulator=False)
+        self.tpm_connect(use_simulator=constants.USE_SIMULATOR)
         nonce = Crypto.randomBytes(20)
         tpm_data = get_signed_pcr_values(self.tpm, nonce, self.pcr_bitmap)
         if tpm_data is None:
@@ -104,7 +107,6 @@ class Client:
             self.communicate(user_input)
 
     def communicate(self, message):
-        # Trying to send multiple messages with one session
         self.send_encrypted_msg(message)
         self.receive_and_decrypt_msg()
 
@@ -128,15 +130,19 @@ class Client:
         plaintext = self.noise.decrypt(ciphertext).decode("UTF-8")
         print(f"Server response: {plaintext}", end="\n")
 
-    def register(self):
-        try:
-            username = input("Please enter username:")
-            # Generate static preshared key:
+    def generate_keys(self):
             key_pair = ED25519().generate_keypair()
             self.public_key = key_pair.public
             self.private_key = key_pair.private
             self.store_keys()
 
+    def register(self):
+        try:
+            username = input("Please enter username:")
+            # Generate static preshared key:
+            self.generate_keys()
+
+            # Create POST request to the server
             tpm_data, tpm_key, _ = self.quote_tpm_data()
             public_bytes = self.public_key.public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
             data = {
@@ -149,22 +155,23 @@ class Client:
             print(f"Registering as {username} at {url}.")
             print(f"PCR values hash: {tpm_data[-32:].hex()}")
 
+            # Surpress SSL warning
+            # This is only temporary due to dummy cert on server side
             requests.packages.urllib3.disable_warnings(
                 requests.packages.urllib3.exceptions.InsecureRequestWarning
-            )  # Surpress SSL warning
+            )  
             response = requests.post(
                 url, json=data, verify=False
-            )  # This is only temporary due to dummy cert on server side
-            requests.packages.urllib3.disable_warnings(
-                requests.packages.urllib3.exceptions.InsecureRequestWarning
-            )  # Surpress SSL warning
+            )  
 
             if response.status_code == 201:
                 print("Registration complete. Response from server is below.")
-                print(response.json())
+                print(response.json(), end="\n\n")
                 self.username = response.json()["username"]
                 self.uid = response.json()["uid"]
-                with open(path.join(constants.CLIENT_DATA_PATH, constants.CLIENT_DATA), "w") as f:  # Save user info
+
+                # Save user info
+                with open(path.join(constants.CLIENT_DATA_PATH, constants.CLIENT_DATA), "w") as f:  
                     f.write(str(response.json()).replace("'", '"'))
                 return True
             else:
@@ -174,10 +181,14 @@ class Client:
                 print(response.raw)
                 return False
         except Exception as e:
-            print("Registration failed!")
+            print("Exception was raised during registration!")
             raise e
 
     def store_keys(self):
+        """Keys are stored in PEM format with weak predefined password. This is not secure!
+            Only for demonstration purposes. In real life, user should use their pass phrase"""
+
+        print(f"Storing keypair to {constants.CLIENT_DATA_PATH}...", end="")
         makedirs(constants.CLIENT_DATA_PATH, exist_ok=True)
         serialized_private_key = self.private_key.private_bytes(
             encoding=serialization.Encoding.PEM,
@@ -192,6 +203,7 @@ class Client:
         )
         with open(f"{constants.CLIENT_DATA_PATH}/client_key.pub", "w") as f:
             f.write(serialized_public_key.decode(constants.ENCODING))
+        print("OK")
 
     def load_keys(self):
         print("Loading keys...", end="")
@@ -208,6 +220,7 @@ class Client:
             exit(1)
 
     def run(self, message):
+        # Load client data
         try:
             with open(path.join(constants.CLIENT_DATA_PATH, constants.CLIENT_DATA), "r") as f:
                 data = json.load(f)
@@ -219,6 +232,8 @@ class Client:
             print(
                 f"Some attributes from file {path.join(constants.CLIENT_DATA_PATH,constants.CLIENT_DATA)} are missing. File is probably corrupted. Please register again."
             )
+
+        # Connect and send message
         try:
             self.set_connection()
         except RuntimeError:

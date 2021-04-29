@@ -15,3 +15,5 @@ SERVER_PRIVATE_KEY_PASS = b"testpassword"
 CLIENT_DATA_PATH = "./client"
 CLIENT_DATA = "client.data"
 CLIENT_PRIVATE_KEY_PASS = b"testpassword"
+
+USE_SIMULATOR = False
