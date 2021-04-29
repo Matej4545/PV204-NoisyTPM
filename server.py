@@ -35,7 +35,7 @@ logger.addHandler(ch)
 class Server:
     def __init__(self):
         self.sock = socket.socket()
-        self.key_pair = ED25519().generate_keypair()
+        # self.key_pair = ED25519().generate_keypair()
         self.user_list = []
         self.message_list = []
         self.requests = []
@@ -58,17 +58,25 @@ class Server:
             logging.error("An error occured in listener method!", exc_info=1)
 
     def exchange_public_keys(self, conn) -> bytes:
-        client_public_key = conn.recv(constants.SOCK_BUFFER)
-        conn.send(self.key_pair.public_bytes)
-        return client_public_key
+        client_uid = conn.recv(constants.SOCK_BUFFER)
+        public_bytes = self.public_key.public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+        conn.send(public_bytes)
+        return client_uid
 
     def set_connection_keys(self, conn):
         try:
-            client_public_key = self.exchange_public_keys(conn)
+            client_uid = self.exchange_public_keys(conn).decode(constants.ENCODING)
+            client_public_key = None
+            for user in self.user_list:
+                logger.debug(f"Comparing {str(user.uid)} with {client_uid}")
+                if str(user.uid) == client_uid:
+                    client_public_key = user.s
+            if client_public_key is None or self.private_key is None:
+                raise AttributeError("client not found or server keys are missing")
             self.noise = NoiseConnection.from_name(b"Noise_KKpsk0_25519_AESGCM_SHA256")
             self.noise.set_keypair_from_private_bytes(
                 Keypair.STATIC,
-                self.key_pair.private.private_bytes(
+                self.private_key.private_bytes(
                     format=serialization.PrivateFormat.Raw,
                     encoding=serialization.Encoding.Raw,
                     encryption_algorithm=serialization.NoEncryption(),
@@ -163,7 +171,8 @@ class Server:
         try:
             filepath = path.join(constants.SERVER_DATA_PATH, file)
             with open(filepath, "r") as input_file:
-                res = jsonpickle.decode(input_file.read())
+                f = input_file.read()
+                res = jsonpickle.decode(f)
                 logger.debug(f"Deserialized sucessfully from {filepath}")
                 return res
         except FileNotFoundError as err:
@@ -198,6 +207,35 @@ class Server:
         self.serialize_to_file(constants.SERVER_CLIENTS_FILENAME, self.user_list)
         self.serialize_to_file(constants.SERVER_MESSAGES_FILENAME, self.message_list)
 
+    def create_key(self):
+        keypair = ED25519().generate_keypair()
+        self.private_key = keypair.private
+        self.public_key = keypair.public
+        logger.info(f"New server key was created. {self.public_key}")
+        self.store_key()
+
+    def store_key(self):
+        serialized_private_key = self.private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.BestAvailableEncryption(constants.SERVER_PRIVATE_KEY_PASS),
+        )
+        self.serialize_to_file("server_key", serialized_private_key)
+        serialized_public_key = self.public_key.public_bytes(
+            encoding=serialization.Encoding.PEM, format=serialization.PublicFormat.SubjectPublicKeyInfo
+        )
+        self.serialize_to_file("server_key.pub", serialized_public_key)
+
+    def load_key(self):
+        try:
+            self.public_key = serialization.load_pem_public_key(self.deserialize_from_file("server_key.pub"))
+            self.private_key = serialization.load_pem_private_key(
+                self.deserialize_from_file("server_key"), password=constants.SERVER_PRIVATE_KEY_PASS
+            )
+        except FileNotFoundError:
+            logger.warn("Key could not be loaded. New key will be created.")
+            self.create_key()
+
     def handle_requests(self):
         while self.isRunning:
             if len(self.requests) != 0:
@@ -229,6 +267,7 @@ class Server:
         self.serialize()
 
     def initialize(self):
+        self.load_key()
         self.should_restart = False
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.sock.bind(("0.0.0.0", constants.SERVER_NOISE_PORT))
@@ -239,8 +278,8 @@ class Server:
         self.listen_thread.start()
         self.req_thread.start()
 
-    def create_user(self, username, pubkey: tuple, pcr_hash):
-        user = interfaces.User(pubkey, pcr_hash, username)
+    def create_user(self, username, pubkey: tuple, pcr_hash, s):
+        user = interfaces.User(pubkey, pcr_hash, s, username)
         self.user_list.append(user)
         return user
 
@@ -302,10 +341,12 @@ def register():
     pcr_hash = base64.b64decode(bytes(request.json["pcr_hash"], constants.ENCODING))
     pubkey_merged = base64.b64decode(bytes(request.json["pubkey"], constants.ENCODING))
     pubkey = (pubkey_merged[:32], pubkey_merged[32:])
+    client_s = base64.b64decode(bytes(request.json["s"], constants.ENCODING))
+
     try:
-        res = server.create_user(username, pubkey, pcr_hash)
+        res = server.create_user(username, pubkey, pcr_hash, client_s)
         logger.debug(
-            f"New user: {res.uid}, {res.username}, {res.pcr_hash.hex()}, EC_a: {res.pubkey[0].hex()}, EC_b: {res.pubkey[1].hex()}"
+            f"New user: {res.uid}, {res.username}, {res.pcr_hash.hex()}, EC_a: {res.pubkey[0].hex()}, EC_b: {res.pubkey[1].hex()}, s: {res.s.hex()}"
         )
         return jsonify({"username": res.username, "uid": res.uid}), 201
     except:

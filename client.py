@@ -6,6 +6,7 @@ from noise.backends.default.diffie_hellmans import ED25519
 from noise.connection import NoiseConnection, Keypair
 from sys import argv
 import requests
+from urllib3.exceptions import InsecureRequestWarning
 import base64
 import constants
 import argparse
@@ -13,26 +14,28 @@ import simple_colors
 import TPM2.Tpm as Tpm2
 from TPM2.Crypt import Crypto
 from tpm2_util import get_signed_pcr_values
+from os import path, makedirs
 
 
 class Client:
     def __init__(self, server, port):
         self.sock = socket.socket()
-        self.key_pair = ED25519().generate_keypair()
         self.ip = server
         self.port = port
         self.pcr_bitmap = [0b11111111, 0b00000000, 0b00000000]  # Quote PCR 0-7
+        self.public_key = None
+        self.private_key = None
 
     def exchange_public_keys(self) -> bytes:
-        self.sock.send(self.key_pair.public_bytes)
-        return self.sock.recv(constants.SERVER_NOISE_PORT)
+        self.sock.send(self.uid.encode(constants.ENCODING))
+        return self.sock.recv(constants.SOCK_BUFFER)
 
     def set_connection_keys(self):
         server_public_key = self.exchange_public_keys()
         self.noise = NoiseConnection.from_name(b"Noise_KKpsk0_25519_AESGCM_SHA256")
         self.noise.set_keypair_from_private_bytes(
             Keypair.STATIC,
-            self.key_pair.private.private_bytes(
+            self.private_key.private_bytes(
                 format=serialization.PrivateFormat.Raw,
                 encoding=serialization.Encoding.Raw,
                 encryption_algorithm=serialization.NoEncryption(),
@@ -128,24 +131,40 @@ class Client:
     def register(self):
         try:
             username = input("Please enter username:")
+            # Generate static preshared key:
+            key_pair = ED25519().generate_keypair()
+            self.public_key = key_pair.public
+            self.private_key = key_pair.private
+            self.store_keys()
+
             tpm_data, tpm_key, _ = self.quote_tpm_data()
+            public_bytes = self.public_key.public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
             data = {
                 "username": username,
                 "pcr_hash": base64.b64encode(tpm_data[-32:]).decode("UTF-8"),
                 "pubkey": base64.b64encode(tpm_key[0] + tpm_key[1]).decode("UTF-8"),
+                "s": base64.b64encode(public_bytes).decode("UTF-8"),
             }
             url = f"https://{self.ip}:{constants.SERVER_FRONTEND_PORT}/register"
             print(f"Registering as {username} at {url}.")
             print(f"PCR values hash: {tpm_data[-32:].hex()}")
+
+            requests.packages.urllib3.disable_warnings(
+                requests.packages.urllib3.exceptions.InsecureRequestWarning
+            )  # Surpress SSL warning
             response = requests.post(
                 url, json=data, verify=False
             )  # This is only temporary due to dummy cert on server side
+            requests.packages.urllib3.disable_warnings(
+                requests.packages.urllib3.exceptions.InsecureRequestWarning
+            )  # Surpress SSL warning
+
             if response.status_code == 201:
                 print("Registration complete. Response from server is below.")
                 print(response.json())
                 self.username = response.json()["username"]
                 self.uid = response.json()["uid"]
-                with open(constants.CLIENT_DATA, "w") as f:  # Save user info
+                with open(path.join(constants.CLIENT_DATA_PATH,constants.CLIENT_DATA), "w") as f:  # Save user info
                     f.write(str(response.json()).replace("'", '"'))
                 return True
             else:
@@ -158,9 +177,39 @@ class Client:
             print("Registration failed!")
             raise e
 
+    def store_keys(self):
+        makedirs(constants.CLIENT_DATA_PATH, exist_ok=True)
+        serialized_private_key = self.private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.BestAvailableEncryption(constants.CLIENT_PRIVATE_KEY_PASS),
+        )
+        with open(f"{constants.CLIENT_DATA_PATH}/client_key", "w") as f:
+            f.write(serialized_private_key.decode(constants.ENCODING))
+
+        serialized_public_key = self.public_key.public_bytes(
+            encoding=serialization.Encoding.PEM, format=serialization.PublicFormat.SubjectPublicKeyInfo
+        )
+        with open(f"{constants.CLIENT_DATA_PATH}/client_key.pub", "w") as f:
+            f.write(serialized_public_key.decode(constants.ENCODING))
+
+    def load_keys(self):
+        print("Loading keys...", end="")
+        try:
+            with open(f"{constants.CLIENT_DATA_PATH}/client_key", "r") as f:
+                self.private_key = serialization.load_pem_private_key(
+                    f.read().encode(constants.ENCODING), password=constants.CLIENT_PRIVATE_KEY_PASS
+                )
+            with open(f"{constants.CLIENT_DATA_PATH}/client_key.pub", "r") as f:
+                self.public_key = serialization.load_pem_public_key(f.read().encode(constants.ENCODING))
+            print("OK")
+        except FileNotFoundError:
+            print("Could not find keys locally. Please register.")
+            exit(1)
+
     def run(self, message):
         try:
-            with open(constants.CLIENT_DATA, "r") as f:
+            with open(path.join(constants.CLIENT_DATA_PATH,constants.CLIENT_DATA), "r") as f:
                 data = json.load(f)
                 self.username = data["username"]
                 self.uid = data["uid"]
@@ -168,7 +217,7 @@ class Client:
             print("No user file found. You should probably register first!")
         except AttributeError:
             print(
-                f"Some attributes from file {constants.CLIENT_DATA} are missing. File is probably corrupted. Please register again."
+                f"Some attributes from file {path.join(constants.CLIENT_DATA_PATH,constants.CLIENT_DATA)} are missing. File is probably corrupted. Please register again."
             )
         try:
             self.set_connection()
@@ -235,6 +284,8 @@ if __name__ == "__main__":
         client = Client(args.server.strip(), args.port)
         if args.register:
             client.register()
+        if client.public_key is None or client.private_key is None:
+            client.load_keys()
         client.run(message)
     except Exception as e:
         print("An error occured! Quitting app.")

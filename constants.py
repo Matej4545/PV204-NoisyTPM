@@ -10,5 +10,8 @@ SERVER_LOG_LEVEL = DEBUG
 SERVER_SSL_POLICY = "adhoc"
 ENCODING = "UTF-8"
 SOCK_BUFFER = 4096
+SERVER_PRIVATE_KEY_PASS = b"testpassword"
 
+CLIENT_DATA_PATH = "./client"
 CLIENT_DATA = "client.data"
+CLIENT_PRIVATE_KEY_PASS = b"testpassword"
